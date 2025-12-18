@@ -72,8 +72,22 @@ export type ManualConflict = {
   submoduleStatus?: SubmoduleStatus
 }
 
+/**
+ * Details about an LFS file pointer marked as conflicted in the index which
+ * needs to be resolved manually by the user
+ */
+export type LFSConflict = {
+  kind: AppFileStatusKind.Conflicted
+  entry: ManualConflictEntry
+  isLFS: true
+  submoduleStatus?: SubmoduleStatus
+}
+
 /** Union of potential conflict scenarios the application should handle */
-export type ConflictedFileStatus = ConflictsWithMarkers | ManualConflict
+export type ConflictedFileStatus =
+  | ConflictsWithMarkers
+  | ManualConflict
+  | LFSConflict
 
 /** Custom typeguard to differentiate Conflict files from other types */
 export function isConflictedFileStatus(
@@ -94,6 +108,13 @@ export function isManualConflict(
   conflictedFileStatus: ConflictedFileStatus
 ): conflictedFileStatus is ManualConflict {
   return !conflictedFileStatus.hasOwnProperty('conflictMarkerCount')
+}
+
+/** Custom typeguard to differentiate LFSConflict from other Conflict types */
+export function isLFSConflict(
+  conflictedFileStatus: ConflictedFileStatus
+): conflictedFileStatus is LFSConflict {
+  return (conflictedFileStatus as LFSConflict).isLFS === true
 }
 
 /** Denotes an untracked file in the working directory) */

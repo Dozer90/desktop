@@ -489,6 +489,34 @@ export function buildDefaultMenu({
     submenu: branchSubmenu,
   })
 
+  const stashSubmenu: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: __DARWIN__ ? 'Create New Stash…' : 'Create &new stash…',
+      id: 'create-new-stash',
+      accelerator: 'CmdOrCtrl+Alt+S',
+      click: emit('create-new-stash'),
+    },
+    {
+      label: __DARWIN__ ? 'Stash Checked Files…' : 'Stash &checked files…',
+      id: 'stash-checked-files',
+      accelerator: 'CmdOrCtrl+Alt+C',
+      click: emit('stash-checked-files'),
+    },
+    separator,
+    {
+      label: __DARWIN__ ? 'View Stashes' : '&View stashes',
+      id: 'show-stashed-changes',
+      accelerator: 'CmdOrCtrl+Alt+V',
+      click: emit('show-stashed-changes'),
+    },
+  ]
+
+  template.push({
+    label: __DARWIN__ ? 'Stash' : '&Stash',
+    id: 'stash',
+    submenu: stashSubmenu,
+  })
+
   if (__DARWIN__) {
     template.push({
       role: 'window',

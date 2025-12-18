@@ -1,5 +1,7 @@
 import { git } from './core'
 import { Repository } from '../../models/repository'
+import * as Path from 'path'
+import * as FSE from 'fs-extra'
 
 /** Install the global LFS filters. */
 export async function installGlobalLFSFilters(force: boolean): Promise<void> {
@@ -97,4 +99,51 @@ export async function filesNotTrackedByLFS(
   }
 
   return filesNotTrackedByGitLFS
+}
+
+/**
+ * Check if a file is an LFS pointer file by reading its content
+ *
+ * LFS pointer files are small text files that begin with:
+ * version https://git-lfs.github.com/spec/v1
+ */
+export async function isLFSPointerFile(
+  repository: Repository,
+  path: string
+): Promise<boolean> {
+  try {
+    const fullPath = Path.join(repository.path, path)
+
+    // LFS pointers are always small (<200 bytes typically)
+    const stats = await FSE.stat(fullPath)
+    if (stats.size > 500) {
+      return false
+    }
+
+    // Read the first line
+    const content = await FSE.readFile(fullPath, 'utf8')
+    return content.startsWith('version https://git-lfs.github.com/spec/v1')
+  } catch (error) {
+    // If we can't read the file, assume it's not an LFS pointer
+    return false
+  }
+}
+
+/**
+ * Check multiple files for LFS pointers
+ * Returns a Set of paths that are LFS pointers
+ */
+export async function getLFSPointerFilePaths(
+  repository: Repository,
+  paths: ReadonlyArray<string>
+): Promise<Set<string>> {
+  const lfsPointers = new Set<string>()
+  await Promise.all(
+    paths.map(async path => {
+      if (await isLFSPointerFile(repository, path)) {
+        lfsPointers.add(path)
+      }
+    })
+  )
+  return lfsPointers
 }

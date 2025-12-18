@@ -66,6 +66,7 @@ import { FetchType } from '../../models/fetch'
 import { GitHubRepository } from '../../models/github-repository'
 import { ManualConflictResolution } from '../../models/manual-conflict-resolution'
 import { Popup, PopupType } from '../../models/popup'
+import { getUnrealEditorForProject } from '../lib/unreal/unreal'
 import {
   PullRequest,
   PullRequestSuggestedNextAction,
@@ -725,7 +726,22 @@ export class Dispatcher {
   }
 
   /** Pull the current branch. */
-  public pull(repository: Repository): Promise<void> {
+  public async pull(
+    repository: Repository,
+    performUECheck: boolean = true
+  ): Promise<void> {
+    if (performUECheck) {
+      const activeProc = await getUnrealEditorForProject(repository)
+      if (activeProc) {
+        this.showPopup({
+          type: PopupType.UnrealEditorRunning,
+          repository,
+          activeProc,
+        })
+        return
+      }
+    }
+
     return this.appStore._pull(repository)
   }
 
@@ -2665,6 +2681,11 @@ export class Dispatcher {
     return this.appStore._popStashEntry(repository, stashEntry)
   }
 
+  /** Applies the given stash in the given repository */
+  public applyStash(repository: Repository, stashEntry: IStashEntry) {
+    return this.appStore._applyStashEntry(repository, stashEntry)
+  }
+
   /**
    * Set the width of the commit summary column in the
    * history view to the given value.
@@ -2689,6 +2710,22 @@ export class Dispatcher {
   /** Hide the diff for stashed changes */
   public hideStashedChanges(repository: Repository) {
     return this.appStore._hideStashedChanges(repository)
+  }
+
+  public async createStashForFiles(
+    repository: Repository,
+    fileSelection: any, // TODO: define proper type
+    message: string
+  ): Promise<void> {
+    throw new Error('Not implemented yet')
+  }
+
+  public async addFilesToStash(
+    repository: Repository,
+    stash: IStashEntry,
+    fileSelection: any // TODO: define proper type
+  ): Promise<void> {
+    throw new Error('Not implemented yet')
   }
 
   /** Call when the user opts to skip the pick editor step of the onboarding tutorial */

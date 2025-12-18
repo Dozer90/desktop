@@ -255,6 +255,7 @@ import {
   createDesktopStashEntry,
   getLastDesktopStashEntryForBranch,
   popStashEntry,
+  applyStashEntry,
   dropDesktopStashEntry,
   moveStashEntry,
 } from '../git/stash'
@@ -1184,9 +1185,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     this.repositoryStateCache.updateChangesState(repository, state => {
       const stashEntry = gitStore.currentBranchSelectedStashEntry
-      const stashEntries = gitStore.currentBranchStashEntries
-        ? Array.from(gitStore.currentBranchStashEntries.values())
-        : []
+      const stashEntries = gitStore.allStashEntries
 
       // Figure out what selection changes we need to make as a result of this
       // change.
@@ -4253,7 +4252,9 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const repositoryState = this.repositoryStateCache.get(repository)
     const tip = repositoryState.branchesState.tip
     const currentBranch = tip.kind === TipState.Valid ? tip.branch : null
-    const hasExistingStash = repositoryState.changesState.stashEntry !== null
+    const hasExistingStash =
+      repositoryState.changesState.stashEntry !== null &&
+      repositoryState.changesState.stashEntry.branchName === currentBranch?.name
 
     if (currentBranch === null) {
       return false
@@ -7057,6 +7058,20 @@ export class AppStore extends TypedBaseStore<IAppState> {
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _applyStashEntry(
+    repository: Repository,
+    stashEntry: IStashEntry
+  ) {
+    await applyStashEntry(repository, stashEntry.stashSha)
+    log.info(
+      `[AppStore. _applyStashEntry] applied stash with commit id ${stashEntry.stashSha}`
+    )
+
+    this.statsStore.increment('stashAppliedCount')
+    await this._refreshRepository(repository)
+  }
+
+  /** This shouldn't be called directly. See `Dispatcher`. */
   public async _dropSelectedStashEntry(repository: Repository) {
     const gitStore = this.gitStoreCache.get(repository)
     const stashEntry = gitStore.currentBranchSelectedStashEntry
@@ -7103,10 +7118,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** This shouldn't be called directly. See `Dispatcher`. */
   public _setSelectedStashEntry(repository: Repository, stashEntrySha: string) {
     const gitStore = this.gitStoreCache.get(repository)
-    const stashEntries = gitStore.currentBranchStashEntries
+    const stashEntries = gitStore.allStashEntries
 
     // Check if the sha is in the stash entries for the current branch
-    const stashEntry = stashEntries?.get(stashEntrySha)
+    const stashEntry = stashEntries.find(v => {
+      return v.stashSha === stashEntrySha
+    })
     if (stashEntry === undefined) {
       log.error(
         `[AppStore. _setSelectedStashEntry] stash entry ${stashEntrySha} not found for ${repository.name}`

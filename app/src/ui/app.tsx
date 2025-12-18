@@ -198,6 +198,9 @@ import {
   BypassReason,
   BypassReasonType,
 } from './secret-scanning/bypass-push-protection-dialog'
+import { UnrealEditorRunning } from './lib/unreal/unreal-editor-running'
+import { CreateNewStashDialog } from './stashing/create-new-stash-dialog'
+import { StashCheckedFilesDialog } from './stashing/stash-checked-files-dialog'
 
 const MinuteInMilliseconds = 1000 * 60
 const HourInMilliseconds = MinuteInMilliseconds * 60
@@ -429,6 +432,30 @@ export class App extends React.Component<IAppProps, IAppState> {
     this.checkIfThankYouIsInOrder()
   }
 
+  private showCreateNewStash = () => {
+    const repository = this.getRepository()
+    if (!repository || repository instanceof CloningRepository) {
+      return
+    }
+
+    this.props.dispatcher.showPopup({
+      type: PopupType.CreateNewStash,
+      repository,
+    })
+  }
+
+  private showStashCheckedFiles = () => {
+    const repository = this.getRepository()
+    if (!repository || repository instanceof CloningRepository) {
+      return
+    }
+
+    this.props.dispatcher.showPopup({
+      type: PopupType.StashCheckedFiles,
+      repository,
+    })
+  }
+
   private onMenuEvent(name: MenuEvent): any {
     // Don't react to menu events when an error dialog is shown.
     if (name !== 'test-app-error' && this.state.errorCount > 1) {
@@ -532,6 +559,10 @@ export class App extends React.Component<IAppProps, IAppState> {
         return this.resizeActiveResizable('decrease-active-resizable-width')
       case 'toggle-changes-filter':
         return this.toggleChangesFilterVisibility()
+      case 'create-new-stash':
+        return this.showCreateNewStash()
+      case 'stash-checked-files':
+        return this.showStashCheckedFiles()
       default:
         if (isTestMenuEvent(name)) {
           return showTestUI(
@@ -2567,6 +2598,40 @@ export class App extends React.Component<IAppProps, IAppState> {
             dispatcher={this.props.dispatcher}
             repository={popup.repository}
             filesSelected={popup.filesSelected}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.UnrealEditorRunning: {
+        return (
+          <UnrealEditorRunning
+            repository={popup.repository}
+            activeProc={popup.activeProc}
+            dispatcher={this.props.dispatcher}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.CreateNewStash: {
+        return (
+          <CreateNewStashDialog
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.StashCheckedFiles: {
+        const repositoryState = this.props.repositoryStateManager.get(
+          popup.repository
+        )
+        const stashEntries = repositoryState.changesState.stashEntries || []
+
+        return (
+          <StashCheckedFilesDialog
+            repository={popup.repository}
+            dispatcher={this.props.dispatcher}
+            stashEntries={stashEntries}
             onDismissed={onPopupDismissedFn}
           />
         )

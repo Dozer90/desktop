@@ -6,6 +6,7 @@ import { PopupType } from '../../models/popup'
 import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { ErrorWithMetadata } from '../../lib/error-with-metadata'
 import { Select } from '../lib/select'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 
 interface IStashDiffHeaderProps {
   readonly stashEntry: IStashEntry
@@ -19,6 +20,7 @@ interface IStashDiffHeaderProps {
 interface IStashDiffHeaderState {
   readonly isRestoring: boolean
   readonly isDiscarding: boolean
+  readonly isPopOnRestore: boolean
 }
 
 /**
@@ -35,6 +37,7 @@ export class StashDiffHeader extends React.Component<
     this.state = {
       isRestoring: false,
       isDiscarding: false,
+      isPopOnRestore: true,
     }
   }
 
@@ -43,7 +46,7 @@ export class StashDiffHeader extends React.Component<
   }
 
   public render() {
-    const { isRestoring, isDiscarding } = this.state
+    const { isRestoring, isDiscarding, isPopOnRestore } = this.state
 
     return (
       <div className="header">
@@ -55,7 +58,8 @@ export class StashDiffHeader extends React.Component<
           {this.props.stashEntries.map(stashEntry => {
             return (
               <option key={stashEntry.stashSha} value={stashEntry.stashSha}>
-                {stashEntry.name} ({stashEntry.stashSha})
+                {stashEntry.userfriendlyName ||
+                  stashEntry.name + ' (' + stashEntry.stashSha + ')'}
               </option>
             )
           })}
@@ -70,15 +74,21 @@ export class StashDiffHeader extends React.Component<
             onCancelButtonClick={this.onDiscardClick}
             okButtonAriaDescribedBy="restore-description"
           />
-          <div className="explanatory-text" id="restore-description">
-            <span className="text">
-              <strong>Restore</strong> will move your stashed files to the
-              Changes list.
-            </span>
-          </div>
+          <Checkbox
+            value={isPopOnRestore ? CheckboxValue.On : CheckboxValue.Off}
+            label="Remove from stash on restore"
+            onChange={this.onPopOnRestoreCheckboxChanged}
+          />
         </div>
       </div>
     )
+  }
+
+  private onPopOnRestoreCheckboxChanged = (
+    event: React.FormEvent<HTMLInputElement>
+  ) => {
+    const isChecked = event.currentTarget.checked
+    this.setState({ isPopOnRestore: isChecked })
   }
 
   private onDiscardClick = async () => {
@@ -114,15 +124,23 @@ export class StashDiffHeader extends React.Component<
     const { dispatcher, repository, stashEntry } = this.props
 
     try {
-      this.setState({ isRestoring: true })
-      await dispatcher.popStash(repository, stashEntry)
+      this.setState({
+        isRestoring: true,
+      })
+      if (this.state.isPopOnRestore) {
+        await dispatcher.popStash(repository, stashEntry)
+      } else {
+        await dispatcher.applyStash(repository, stashEntry)
+      }
     } catch (err) {
       const errorWithMetadata = new ErrorWithMetadata(err, {
         repository: repository,
       })
       dispatcher.postError(errorWithMetadata)
     } finally {
-      this.setState({ isRestoring: false })
+      this.setState({
+        isRestoring: false,
+      })
     }
   }
 }

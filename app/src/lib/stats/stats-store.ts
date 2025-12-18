@@ -143,6 +143,7 @@ const DefaultDailyMeasures: IDailyMeasures = {
   changesTakenToNewBranchCount: 0,
   stashRestoreCount: 0,
   stashDiscardCount: 0,
+  stashAppliedCount: 0,
   stashViewCount: 0,
   noActionTakenOnStashCount: 0,
   suggestedStepOpenInExternalEditor: 0,

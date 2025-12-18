@@ -24,7 +24,7 @@ export const DesktopStashEntryMarker = '!!GitHub_Desktop'
  * format: `!!GitHub_Desktop<branch>`
  */
 
-const stashEntryMessageRe = /On ([^:]+):/
+const stashEntryMessageRe = /On ([^:]+): (.+)$/
 
 type StashResult = {
   /** The stash entries created by Desktop and other tools */
@@ -35,6 +35,13 @@ type StashResult = {
    * i.e. stash entries created both by Desktop and outside of Desktop
    */
   readonly stashEntryCount: number
+}
+
+type ParsedStashMessage = {
+  readonly branch?: string
+  readonly description: string
+  readonly userfriendlyName: string
+  readonly isGitHubDesktop: boolean
 }
 
 /**
@@ -75,17 +82,19 @@ export async function getStashes(repository: Repository): Promise<StashResult> {
     // we can identify the stash entry created by GitHub Desktop by looking for the
     // DesktopStashEntryMarker string in the stash entry message
 
-    const gitHubDesktopBranchName = extractBranchFromMessage(message)
-    const branchName = gitHubDesktopBranchName || name
+    const parsedStashMessage = parseStashMessage(message)
+    const branchName = parsedStashMessage.branch || name
 
     allEntries.push({
       name,
       stashSha,
       branchName,
+      userfriendlyName: parsedStashMessage.userfriendlyName,
+      description: parsedStashMessage.description,
       tree,
       parents: parents.length > 0 ? parents.split(' ') : [],
       files,
-      isGitHubDesktop: extractIsGitHubDesktopStashEntry(message),
+      isGitHubDesktop: parsedStashMessage.isGitHubDesktop,
     })
   }
 
@@ -280,9 +289,62 @@ export async function popStashEntry(
   }
 }
 
-function extractBranchFromMessage(message: string): string | null {
+/**
+ * Apply the stash entry identified by matching `stashSha` to its commit hash.
+ * Apply does NOT pop the stash, allowing you to keep it and modify it later.
+ */
+export async function applyStashEntry(
+  repository: Repository,
+  stashSha: string
+): Promise<void> {
+  // ignoring these git errors for now, this will change when we start
+  // implementing the stash conflict flow
+  const expectedErrors = new Set<DugiteError>([DugiteError.MergeConflicts])
+  const stashToApply = await getStashEntryMatchingSha(repository, stashSha)
+
+  if (stashToApply !== null) {
+    const args = ['stash', 'apply', '--quiet', `${stashToApply.name}`]
+    await git(args, repository.path, 'applyStashEntry', {
+      expectedErrors,
+    }).catch(e => {
+      // applying a stashes that create conflicts in the working directory
+      // report an exit code of `1` and are not dropped after being applied.
+      // so, we check for this case and drop them manually unless there's
+      // anything in stderr as that could have prevented the stash from being
+      // popped. Not the greatest approach but stash isn't very communicative
+      if (
+        e instanceof GitError &&
+        e.result.exitCode === 1 &&
+        e.result.stderr.length === 0
+      ) {
+        log.info(
+          `[applyStashEntry] a stash was applied successfully but exit code ${e.result.exitCode} reported.`
+        )
+      }
+      return Promise.reject(e)
+    })
+  }
+}
+
+/**
+ * Parse a stash message and extract all relevant information
+ *
+ * Git stash messages have the format: "On <branch>: <description>"
+ * Git Desktop uses:                   "On <branch>: !!GitHub_Desktop<branch>"
+ */
+
+function parseStashMessage(message: string): ParsedStashMessage {
   const match = stashEntryMessageRe.exec(message)
-  return match === null ? null : match[1]
+  const isGitHubDesktop = extractIsGitHubDesktopStashEntry(message)
+  const branch = match ? match[1] : undefined
+  const description = match ? match[2] : message
+
+  return {
+    branch,
+    description,
+    userfriendlyName: isGitHubDesktop ? '' : description,
+    isGitHubDesktop,
+  }
 }
 function extractIsGitHubDesktopStashEntry(message: string): boolean {
   return message.includes(DesktopStashEntryMarker)

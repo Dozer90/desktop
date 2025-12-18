@@ -45,6 +45,8 @@ export type MenuEvent =
   | 'decrease-active-resizable-width'
   | 'increase-active-resizable-width'
   | 'toggle-changes-filter'
+  | 'create-new-stash'
+  | 'stash-checked-files'
   | TestMenuEvent
 
 /**

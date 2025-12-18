@@ -25,6 +25,7 @@ import { UnreachableCommitsTab } from '../ui/history/unreachable-commits-dialog'
 import { IAPIComment } from '../lib/api'
 import { ISecretScanResult } from '../ui/secret-scanning/push-protection-error-dialog'
 import { BypassReasonType } from '../ui/secret-scanning/bypass-push-protection-dialog'
+import { ProcessInfo } from '../ui/lib/processes'
 
 export enum PopupType {
   RenameBranch = 'RenameBranch',
@@ -103,6 +104,9 @@ export enum PopupType {
   BypassPushProtection = 'BypassPushProtection',
   GenerateCommitMessageOverrideWarning = 'GenerateCommitMessageOverrideWarning',
   GenerateCommitMessageDisclaimer = 'GenerateCommitMessageDisclaimer',
+  UnrealEditorRunning = 'UnrealEditorRunning',
+  CreateNewStash = 'CreateNewStash',
+  StashCheckedFiles = 'StashCheckedFiles',
 }
 
 interface IBasePopup {
@@ -463,6 +467,19 @@ export type PopupDetail =
       // from this popup we will trigger the commit message generation too.
       repository: Repository
       filesSelected: ReadonlyArray<WorkingDirectoryFileChange>
+    }
+  | {
+      type: PopupType.UnrealEditorRunning
+      repository: Repository
+      activeProc: ProcessInfo
+    }
+  | {
+      type: PopupType.CreateNewStash
+      repository: Repository
+    }
+  | {
+      type: PopupType.StashCheckedFiles
+      repository: Repository
     }
 
 export type Popup = IBasePopup & PopupDetail

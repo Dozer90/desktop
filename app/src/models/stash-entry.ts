@@ -10,6 +10,12 @@ export interface IStashEntry {
   /** The SHA of the commit object created as a result of stashing. */
   readonly stashSha: string
 
+  /** The user-friendly name. */
+  readonly userfriendlyName: string
+
+  /** A description of the current stash. */
+  readonly description: string
+
   /** The list of files this stash touches */
   readonly files: StashedFileChanges
 

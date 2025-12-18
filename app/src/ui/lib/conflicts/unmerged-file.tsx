@@ -2,9 +2,11 @@ import * as React from 'react'
 import {
   isConflictWithMarkers,
   isManualConflict,
+  isLFSConflict,
   ConflictedFileStatus,
   ConflictsWithMarkers,
   ManualConflict,
+  LFSConflict,
   GitStatusEntry,
 } from '../../../models/status'
 import { join } from 'path'
@@ -98,6 +100,21 @@ export const renderUnmergedFile: React.FunctionComponent<{
         props.setIsFileResolutionOptionsMenuOpen,
     })
   }
+
+  if (
+    isLFSConflict(props.status) &&
+    hasUnresolvedConflicts(props.status, props.manualResolution)
+  ) {
+    return renderConflictedLFSPointerFile({
+      path: props.path,
+      status: props.status,
+      repository: props.repository,
+      dispatcher: props.dispatcher,
+      ourBranch: props.ourBranch,
+      theirBranch: props.theirBranch,
+    })
+  }
+
   if (
     isManualConflict(props.status) &&
     hasUnresolvedConflicts(props.status, props.manualResolution)
@@ -315,6 +332,57 @@ const renderConflictedFileWithConflictMarkers: React.FunctionComponent<{
       </div>
     </>
   )
+  return renderConflictedFileWrapper(props.path, content)
+}
+
+const renderConflictedLFSPointerFile: React.FunctionComponent<{
+  readonly path: string
+  readonly status: LFSConflict
+  readonly repository: Repository
+  readonly dispatcher: Dispatcher
+  readonly ourBranch?: string
+  readonly theirBranch?: string
+}> = props => {
+  const onDropdownClick = makeManualConflictDropdownClickHandler(
+    props.path,
+    props.status,
+    props.repository,
+    props.dispatcher,
+    props.ourBranch,
+    props.theirBranch
+  )
+
+  const onDropdownKeyDown = makeManualConflictDropdownOnKeyDownHandler(
+    props.path,
+    props.status,
+    props.repository,
+    props.dispatcher,
+    props.ourBranch,
+    props.theirBranch
+  )
+
+  const content = (
+    <>
+      <div className="column-left">
+        <PathText path={props.path} />
+        <div className="file-conflicts-status lfs-conflict">
+          <Octicon symbol={octicons.alert} className="lfs-warning-icon" />
+          LFS conflict - choose a version
+        </div>
+      </div>
+      <div className="action-buttons">
+        <Button
+          className="small-button button-group-item resolve-arrow-menu"
+          onClick={onDropdownClick}
+          onKeyDown={onDropdownKeyDown}
+        >
+          Resolve
+          <Octicon symbol={octicons.triangleDown} />
+        </Button>
+      </div>
+    </>
+  )
+
   return renderConflictedFileWrapper(props.path, content)
 }
 

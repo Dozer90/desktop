@@ -1204,7 +1204,7 @@ export class GitStore extends BaseStore {
       }
     }
 
-    const stashEntry = this.currentBranchStashEntries?.values().next().value
+    const stashEntry = this.allStashEntries?.[0] || null
     if (stashEntry) {
       this.setCurrentBranchSelectedStashEntry(stashEntry)
     } else {
@@ -1244,12 +1244,15 @@ export class GitStore extends BaseStore {
     this.emitUpdate()
   }
 
-  /** All stash entries for the current branch. */
-  public get currentBranchStashEntries() {
-    if (this._tip && this._tip.kind === TipState.Valid) {
-      return this._stashEntries.get(this._tip.branch.name)
-    }
-    return null
+  /** All stashed entries. */
+  public get allStashEntries() {
+    const allEntries: IStashEntry[] = []
+    this._stashEntries.forEach(branchStashes => {
+      branchStashes.forEach(stash => {
+        allEntries.push(stash)
+      })
+    })
+    return allEntries
   }
 
   /** The total number of stash entries */

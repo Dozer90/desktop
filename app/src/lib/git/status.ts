@@ -27,6 +27,7 @@ import { getBinaryPaths } from './diff'
 import { getRebaseInternalState } from './rebase'
 import { RebaseInternalState } from '../../models/rebase'
 import { isCherryPickHeadFound } from './cherry-pick'
+import { getLFSPointerFilePaths } from './lfs'
 import { git } from '.'
 
 /** The encapsulation of the result from 'git status' */
@@ -78,6 +79,7 @@ interface IStatusHeadersData {
 type ConflictFilesDetails = {
   conflictCountsByPath: ReadonlyMap<string, number>
   binaryFilePaths: ReadonlyArray<string>
+  lfsPointerFilePaths: ReadonlySet<string>
 }
 
 function parseConflictedState(
@@ -85,6 +87,16 @@ function parseConflictedState(
   path: string,
   conflictDetails: ConflictFilesDetails
 ): ConflictedFileStatus {
+  // Check for LFS files FIRST
+  const isLFS = conflictDetails.lfsPointerFilePaths.has(path)
+  if (isLFS) {
+    return {
+      kind: AppFileStatusKind.Conflicted,
+      entry,
+      isLFS: true,
+    }
+  }
+
   switch (entry.action) {
     case UnmergedEntrySummary.BothAdded: {
       const isBinary = conflictDetails.binaryFilePaths.includes(path)
@@ -401,9 +413,15 @@ async function getMergeConflictDetails(
     'MERGE_HEAD',
     conflictedFilesInIndex
   )
+  const lfsPointerFilePaths = await getLFSPointerFilePaths(
+    repository,
+    conflictedFilesInIndex.map(e => e.path)
+  )
+
   return {
     conflictCountsByPath,
     binaryFilePaths,
+    lfsPointerFilePaths,
   }
 }
 
@@ -419,9 +437,15 @@ async function getRebaseConflictDetails(
     'REBASE_HEAD',
     conflictedFilesInIndex
   )
+  const lfsPointerFilePaths = await getLFSPointerFilePaths(
+    repository,
+    conflictedFilesInIndex.map(e => e.path)
+  )
+
   return {
     conflictCountsByPath,
     binaryFilePaths,
+    lfsPointerFilePaths,
   }
 }
 
@@ -446,9 +470,15 @@ async function getWorkingDirectoryConflictDetails(
     )
   } catch (error) {}
 
+  const lfsPointerFilePaths = await getLFSPointerFilePaths(
+    repository,
+    conflictedFilesInIndex.map(e => e.path)
+  )
+
   return {
     conflictCountsByPath,
     binaryFilePaths,
+    lfsPointerFilePaths,
   }
 }
 
@@ -498,5 +528,6 @@ async function getConflictDetails(
   return {
     conflictCountsByPath: new Map<string, number>(),
     binaryFilePaths: new Array<string>(),
+    lfsPointerFilePaths: new Set<string>(),
   }
 }
