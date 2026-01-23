@@ -19,6 +19,7 @@ import {
   IMultiCommitOperationUndoState,
   IMultiCommitOperationState,
   IPullRequestState,
+  ActionSectionTab,
 } from '../app-state'
 import { merge } from '../merge'
 import { DefaultCommitMessage } from '../../models/commit-message'
@@ -329,6 +330,7 @@ function getInitialRepositoryState(): IRepositoryState {
       },
     },
     selectedSection: RepositorySectionTab.Changes,
+    selectedActionTab: ActionSectionTab.Commit,
     branchesState: {
       tip: { kind: TipState.Unknown },
       defaultBranch: null,
@@ -363,7 +365,7 @@ function getInitialRepositoryState(): IRepositoryState {
     aheadBehind: null,
     remote: null,
     isPushPullFetchInProgress: false,
-    isCommitting: false,
+    isCommittingOrStashing: false,
     isGeneratingCommitMessage: false,
     commitToAmend: null,
     lastFetched: null,

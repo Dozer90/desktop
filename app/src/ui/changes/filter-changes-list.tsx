@@ -32,6 +32,7 @@ import {
   CopySelectedRelativePathsLabel,
 } from '../lib/context-menu'
 import { CommitMessage } from './commit-message'
+import { StashMessage } from './stash-message'
 import { ChangedFile } from './changed-file'
 import { IAutocompletionProvider } from '../autocompletion'
 import { showContextualMenu } from '../../lib/menu-item'
@@ -43,12 +44,12 @@ import {
   RebaseConflictState,
   ConflictState,
   Foldout,
+  ActionSectionTab,
 } from '../../lib/app-state'
 import { ContinueRebase } from './continue-rebase'
-import { Octicon, OcticonSymbolVariant } from '../octicons'
+import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
-import { IStashEntry } from '../../models/stash-entry'
-import classNames from 'classnames'
+import { IStashEntry, StashedChangesLoadStates } from '../../models/stash-entry'
 import { hasWritePermission } from '../../models/github-repository'
 import { hasConflictedFiles } from '../../lib/status'
 import { createObservableRef } from '../lib/observable-ref'
@@ -56,7 +57,6 @@ import { Popup, PopupType } from '../../models/popup'
 import { EOL } from 'os'
 import { RepoRulesInfo } from '../../models/repo-rules'
 import { IAheadBehind } from '../../models/branch'
-import { StashDiffViewerId } from '../stashing'
 import { AugmentedSectionFilterList } from '../lib/augmented-filter-list'
 import { IFilterListGroup, IFilterListItem } from '../lib/filter-list'
 import { ClickSource } from '../lib/list'
@@ -73,6 +73,7 @@ import {
   applyFilters,
 } from './filter-changes-logic'
 import { ChangesListFilterOptions } from './changes-list-filter-options'
+import { TabBar } from '../tab-bar'
 
 export interface IChangesListItem extends IFilterListItem {
   readonly id: string
@@ -81,22 +82,13 @@ export interface IChangesListItem extends IFilterListItem {
 }
 
 const RowHeight = 29
-const StashIcon: OcticonSymbolVariant = {
-  w: 16,
-  h: 16,
-  p: [
-    'M10.5 1.286h-9a.214.214 0 0 0-.214.214v9a.214.214 0 0 0 .214.214h9a.214.214 0 0 0 ' +
-      '.214-.214v-9a.214.214 0 0 0-.214-.214zM1.5 0h9A1.5 1.5 0 0 1 12 1.5v9a1.5 1.5 0 0 1-1.5 ' +
-      '1.5h-9A1.5 1.5 0 0 1 0 10.5v-9A1.5 1.5 0 0 1 1.5 0zm5.712 7.212a1.714 1.714 0 1 ' +
-      '1-2.424-2.424 1.714 1.714 0 0 1 2.424 2.424zM2.015 12.71c.102.729.728 1.29 1.485 ' +
-      '1.29h9a1.5 1.5 0 0 0 1.5-1.5v-9a1.5 1.5 0 0 0-1.29-1.485v1.442a.216.216 0 0 1 ' +
-      '.004.043v9a.214.214 0 0 1-.214.214h-9a.216.216 0 0 1-.043-.004H2.015zm2 2c.102.729.728 ' +
-      '1.29 1.485 1.29h9a1.5 1.5 0 0 0 1.5-1.5v-9a1.5 1.5 0 0 0-1.29-1.485v1.442a.216.216 0 0 1 ' +
-      '.004.043v9a.214.214 0 0 1-.214.214h-9a.216.216 0 0 1-.043-.004H4.015z',
-  ],
-}
 
 const GitIgnoreFileName = '.gitignore'
+
+const enum Tab {
+  Commit = 0,
+  Stash = 1,
+}
 
 interface IFilterChangesListProps {
   readonly repository: Repository
@@ -156,7 +148,7 @@ interface IFilterChangesListProps {
   readonly commitAuthor: CommitIdentity | null
   readonly dispatcher: Dispatcher
   readonly availableWidth: number
-  readonly isCommitting: boolean
+  readonly isCommittingOrStashing: boolean
   readonly isGeneratingCommitMessage: boolean
   readonly shouldShowGenerateCommitMessageCallOut: boolean
   readonly commitToAmend: Commit | null
@@ -199,8 +191,7 @@ interface IFilterChangesListProps {
   readonly externalEditorLabel?: string
 
   readonly stashEntry: IStashEntry | null
-
-  readonly isShowingStashEntry: boolean
+  readonly stashEntries: ReadonlyArray<IStashEntry>
 
   /**
    * Whether we should show the onboarding tutorial nudge
@@ -219,6 +210,9 @@ interface IFilterChangesListProps {
 
   /** Whether or not to show the changes filter */
   readonly showChangesFilter: boolean
+
+  /** The currently selected action tab (Commit or Stash) */
+  readonly selectedActionTab: ActionSectionTab
 }
 
 interface IFilterChangesListState {
@@ -226,6 +220,7 @@ interface IFilterChangesListState {
   readonly selectedItems: ReadonlyArray<IChangesListItem>
   readonly focusedRow: string | null
   readonly groups: ReadonlyArray<IFilterListGroup<IChangesListItem>>
+  readonly selectedStashForViewing: IStashEntry | null
 }
 
 function getSelectedItemsFromProps(
@@ -338,6 +333,7 @@ export class FilterChangesList extends React.Component<
       selectedItems: getSelectedItemsFromProps(props),
       focusedRow: null,
       groups,
+      selectedStashForViewing: null,
     }
   }
 
@@ -388,7 +384,7 @@ export class FilterChangesList extends React.Component<
   ): JSX.Element | null => {
     const {
       rebaseConflictState,
-      isCommitting,
+      isCommittingOrStashing,
       onIncludeChanged,
       availableWidth,
     } = this.props
@@ -422,13 +418,25 @@ export class FilterChangesList extends React.Component<
       : includeAll
 
     const disableSelection =
-      isCommitting || rebaseConflictState !== null || isUncommittableSubmodule
+      isCommittingOrStashing ||
+      rebaseConflictState !== null ||
+      isUncommittableSubmodule
 
     const checkboxTooltip = isUncommittableSubmodule
       ? 'This submodule change cannot be added to a commit in this repository because it contains changes that have not been committed.'
       : isPartiallyCommittableSubmodule
       ? 'Only changes that have been committed within the submodule will be added to this repository. You need to commit any other modified or untracked changes in the submodule before including them in this repository.'
       : undefined
+
+    // Check if this file is in the selected stash
+    let inSelectedStash = false
+    if (
+      this.state.selectedStashForViewing !== null &&
+      this.state.selectedStashForViewing.files.kind === StashedChangesLoadStates.Loaded
+    ) {
+      const stashFiles = this.state.selectedStashForViewing.files.files
+      inSelectedStash = stashFiles.some(stashFile => stashFile.path === file.path)
+    }
 
     return (
       <ChangedFile
@@ -441,6 +449,7 @@ export class FilterChangesList extends React.Component<
         checkboxTooltip={checkboxTooltip}
         focused={this.state.focusedRow === changeListItem.id}
         matches={matches}
+        inSelectedStash={inSelectedStash}
       />
     )
   }
@@ -507,7 +516,10 @@ export class FilterChangesList extends React.Component<
     event.preventDefault()
 
     // need to preserve the working directory state while dealing with conflicts
-    if (this.props.rebaseConflictState !== null || this.props.isCommitting) {
+    if (
+      this.props.rebaseConflictState !== null ||
+      this.props.isCommittingOrStashing
+    ) {
       return
     }
 
@@ -813,7 +825,7 @@ export class FilterChangesList extends React.Component<
   ) => {
     const file = item.change
 
-    if (this.props.isCommitting) {
+    if (this.props.isCommittingOrStashing) {
       return
     }
 
@@ -864,7 +876,7 @@ export class FilterChangesList extends React.Component<
       repository,
       repositoryAccount,
       dispatcher,
-      isCommitting,
+      isCommittingOrStashing,
       isGeneratingCommitMessage,
       commitToAmend,
       currentBranchProtected,
@@ -883,7 +895,7 @@ export class FilterChangesList extends React.Component<
           repository={repository}
           rebaseConflictState={rebaseConflictState}
           workingDirectory={workingDirectory}
-          isCommitting={isCommitting}
+          isCommittingOrStashing={isCommittingOrStashing}
           hasUntrackedChanges={hasUntrackedChanges}
         />
       )
@@ -940,7 +952,7 @@ export class FilterChangesList extends React.Component<
         commitMessage={this.props.commitMessage}
         focusCommitMessage={this.props.focusCommitMessage}
         autocompletionProviders={this.props.autocompletionProviders}
-        isCommitting={isCommitting}
+        isCommittingOrStashing={isCommittingOrStashing}
         isGeneratingCommitMessage={isGeneratingCommitMessage}
         shouldShowGenerateCommitMessageCallOut={
           shouldShowGenerateCommitMessageCallOut
@@ -995,6 +1007,61 @@ export class FilterChangesList extends React.Component<
     dispatcher.setShowCoAuthoredBy(repository, showCoAuthors)
   }
 
+  private onActionTabClicked = (index: number) => {
+    const tab =
+      index === Tab.Commit ? ActionSectionTab.Commit : ActionSectionTab.Stash
+    this.props.dispatcher.changeActionSection(tab)
+  }
+
+  private renderActionTabs = (): JSX.Element => {
+    const selectedTab =
+      this.props.selectedActionTab === ActionSectionTab.Commit
+        ? Tab.Commit
+        : Tab.Stash
+
+    return (
+      <div className="changes-action-tabs">
+        <TabBar
+          selectedIndex={selectedTab}
+          onTabClicked={this.onActionTabClicked}
+        >
+          <span className="with-indicator" id="commit-tab">
+            <span>Commit</span>
+          </span>
+
+          <div className="with-indicator" id="stash-tab">
+            <span>Stash</span>
+          </div>
+        </TabBar>
+      </div>
+    )
+  }
+
+  private onSelectedStashChanged = (stash: IStashEntry | null) => {
+    this.setState({ selectedStashForViewing: stash })
+  }
+
+  private renderStashMessageForm = (): JSX.Element => {
+    const { workingDirectory } = this.props
+
+    // Files selected to commit (to be committed) (not selected to see in diff)
+    const filesSelected = workingDirectory.files.filter(
+      f => f.selection.getSelectionType() !== DiffSelectionType.None
+    )
+    const anyFilesSelected = filesSelected.length > 0
+
+    return (
+      <StashMessage
+        repository={this.props.repository}
+        dispatcher={this.props.dispatcher}
+        isStashing={this.props.isCommittingOrStashing}
+        stashEntries={this.props.stashEntries}
+        onSelectedStashChanged={this.onSelectedStashChanged}
+        anyFilesSelected={anyFilesSelected}
+      />
+    )
+  }
+
   private onConfirmCommitWithUnknownCoAuthors = (
     coAuthors: ReadonlyArray<UnknownAuthor>,
     onCommitAnyway: () => void
@@ -1046,47 +1113,6 @@ export class FilterChangesList extends React.Component<
     }
   }
 
-  private onStashEntryClicked = () => {
-    const { isShowingStashEntry, dispatcher, repository } = this.props
-
-    if (isShowingStashEntry) {
-      dispatcher.selectWorkingDirectoryFiles(repository)
-
-      // If the button is clicked, that implies the stash was not restored or discarded
-      dispatcher.incrementMetric('noActionTakenOnStashCount')
-    } else {
-      dispatcher.selectStashedFile(repository)
-      dispatcher.incrementMetric('stashViewCount')
-    }
-  }
-
-  private renderStashedChanges() {
-    if (this.props.stashEntry === null) {
-      return null
-    }
-
-    const className = classNames(
-      'stashed-changes-button',
-      this.props.isShowingStashEntry ? 'selected' : null
-    )
-
-    return (
-      <button
-        className={className}
-        onClick={this.onStashEntryClicked}
-        tabIndex={0}
-        aria-expanded={this.props.isShowingStashEntry}
-        aria-controls={
-          this.props.isShowingStashEntry ? StashDiffViewerId : undefined
-        }
-      >
-        <Octicon className="stack-icon" symbol={StashIcon} />
-        <div className="text">Stashed Changes</div>
-        <Octicon symbol={octicons.chevronRight} />
-      </button>
-    )
-  }
-
   private onChangedFileDoubleClick = (item: IChangesListItem) => {
     this.props.onOpenItemInExternalEditor(item.change.path)
   }
@@ -1098,7 +1124,7 @@ export class FilterChangesList extends React.Component<
     // The commit is already in-flight but this check prevents the
     // user from changing selection.
     if (
-      this.props.isCommitting &&
+      this.props.isCommittingOrStashing &&
       (event.key === 'Enter' || event.key === ' ')
     ) {
       event.preventDefault()
@@ -1204,7 +1230,8 @@ export class FilterChangesList extends React.Component<
   }
 
   private renderCheckBoxRow = () => {
-    const { workingDirectory, rebaseConflictState, isCommitting } = this.props
+    const { workingDirectory, rebaseConflictState, isCommittingOrStashing } =
+      this.props
     const { files } = workingDirectory
 
     const visibleFiles = this.state.filteredItems.size
@@ -1216,7 +1243,9 @@ export class FilterChangesList extends React.Component<
     )
 
     const disableAllCheckbox =
-      files.length === 0 || isCommitting || rebaseConflictState !== null
+      files.length === 0 ||
+      isCommittingOrStashing ||
+      rebaseConflictState !== null
 
     const checkAllLabel = `${
       visibleFiles !== files.length ? `${visibleFiles} of ` : ''
@@ -1285,7 +1314,12 @@ export class FilterChangesList extends React.Component<
   }
 
   public render() {
-    const { workingDirectory, isCommitting } = this.props
+    const { workingDirectory, isCommittingOrStashing } = this.props
+
+    const renderMessageForm =
+      this.props.selectedActionTab === ActionSectionTab.Commit
+        ? this.renderCommitMessageForm
+        : this.renderStashMessageForm
 
     return (
       <>
@@ -1324,7 +1358,7 @@ export class FilterChangesList extends React.Component<
             }
             invalidationProps={{
               workingDirectory: workingDirectory,
-              isCommitting: isCommitting,
+              isCommittingOrStashing: isCommittingOrStashing,
               focusedRow: this.state.focusedRow,
               showChangesFilter: this.props.showChangesFilter,
               filterNewFiles: this.props.fileListFilter.isNewFile,
@@ -1342,9 +1376,9 @@ export class FilterChangesList extends React.Component<
             )}
           />
         </div>
-        {this.renderStashedChanges()}
+        {this.renderActionTabs()}
         {this.renderHiddenChangesWarning()}
-        {this.renderCommitMessageForm()}
+        {renderMessageForm()}
       </>
     )
   }

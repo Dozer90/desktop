@@ -20,7 +20,7 @@ interface IChangesProps {
   readonly imageDiffType: ImageDiffType
 
   /** Whether a commit is in progress */
-  readonly isCommitting: boolean
+  readonly isCommittingOrStashing: boolean
   readonly hideWhitespaceInDiff: boolean
 
   /**
@@ -63,7 +63,7 @@ export class Changes extends React.Component<IChangesProps, {}> {
    * progress or if the user has opted to hide whitespace changes.
    */
   private get lineSelectionDisabled() {
-    return this.props.isCommitting || this.props.hideWhitespaceInDiff
+    return this.props.isCommittingOrStashing || this.props.hideWhitespaceInDiff
   }
 
   private onDiffLineIncludeChanged = (selection: DiffSelection) => {

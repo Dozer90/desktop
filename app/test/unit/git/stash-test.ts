@@ -74,7 +74,7 @@ describe('git/stash', () => {
         'just testing stuff'
       )
 
-      await createDesktopStashEntry(repository, 'master', [])
+      await createDesktopStashEntry(repository, 'master', null, null, false, [])
 
       const stash = await getStashes(repository)
       const entries = stash.allEntries
@@ -98,7 +98,14 @@ describe('git/stash', () => {
         f => f.status.kind === AppFileStatusKind.Untracked
       )
 
-      await createDesktopStashEntry(repository, 'master', untrackedFiles)
+      await createDesktopStashEntry(
+        repository,
+        'master',
+        null,
+        null,
+        false,
+        untrackedFiles
+      )
 
       status = await getStatusOrThrow(repository)
       files = status.workingDirectory.files
@@ -153,7 +160,7 @@ describe('git/stash', () => {
     it('creates message that matches Desktop stash entry format', () => {
       const branchName = 'master'
 
-      const message = createDesktopStashMessage(branchName)
+      const message = createDesktopStashMessage(branchName, null, null)
 
       assert.equal(message, '!!GitHub_Desktop<master>')
     })
@@ -330,7 +337,12 @@ async function stash(
   message: string | null
 ): Promise<void> {
   const result = await exec(
-    ['stash', 'push', '-m', message || createDesktopStashMessage(branchName)],
+    [
+      'stash',
+      'push',
+      '-m',
+      message || createDesktopStashMessage(branchName, null, null),
+    ],
     repository.path
   )
 

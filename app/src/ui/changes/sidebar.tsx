@@ -8,6 +8,7 @@ import {
   RebaseConflictState,
   isRebaseConflictState,
   ChangesSelectionKind,
+  ActionSectionTab,
 } from '../../lib/app-state'
 import { Repository } from '../../models/repository'
 import { Dispatcher } from '../dispatcher'
@@ -55,7 +56,8 @@ interface IChangesSidebarProps {
   // eslint-disable-next-line react/no-unused-prop-types
   readonly issuesStore: IssuesStore
   readonly availableWidth: number
-  readonly isCommitting: boolean
+  readonly selectedActionTab: ActionSectionTab
+  readonly isCommittingOrStashing: boolean
   readonly isGeneratingCommitMessage: boolean
   readonly shouldShowGenerateCommitMessageCallOut: boolean
   readonly commitToAmend: Commit | null
@@ -346,7 +348,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
             commit={commit}
             onUndo={this.onUndo}
             emoji={this.props.emoji}
-            isCommitting={this.props.isCommitting}
+            isCommittingOrStashing={this.props.isCommittingOrStashing}
           />
         </CSSTransition>
       )
@@ -392,7 +394,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
         ? selection.selectedFileIDs
         : []
 
-    const isShowingStashEntry = selection.kind === ChangesSelectionKind.Stash
+    //const isShowingStashEntry = selection.kind === ChangesSelectionKind.Stash
     const repositoryAccount = getAccountForRepository(
       this.props.accounts,
       this.props.repository
@@ -434,11 +436,12 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           focusCommitMessage={this.props.focusCommitMessage}
           isShowingModal={this.props.isShowingModal}
           isShowingFoldout={this.props.isShowingFoldout}
+          selectedActionTab={this.props.selectedActionTab}
           autocompletionProviders={this.autocompletionProviders!}
           availableWidth={this.props.availableWidth}
           onIgnoreFile={this.onIgnoreFile}
           onIgnorePattern={this.onIgnorePattern}
-          isCommitting={this.props.isCommitting}
+          isCommittingOrStashing={this.props.isCommittingOrStashing}
           isGeneratingCommitMessage={this.props.isGeneratingCommitMessage}
           shouldShowGenerateCommitMessageCallOut={
             this.props.shouldShowGenerateCommitMessageCallOut
@@ -451,7 +454,7 @@ export class ChangesSidebar extends React.Component<IChangesSidebarProps, {}> {
           onChangesListScrolled={this.props.onChangesListScrolled}
           changesListScrollTop={this.props.changesListScrollTop}
           stashEntry={this.props.changes.stashEntry}
-          isShowingStashEntry={isShowingStashEntry}
+          stashEntries={this.props.changes.stashEntries}
           currentBranchProtected={currentBranchProtected}
           shouldNudgeToCommit={this.props.shouldNudgeToCommit}
           commitSpellcheckEnabled={this.props.commitSpellcheckEnabled}

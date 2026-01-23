@@ -127,6 +127,7 @@ import {
   IMultiCommitOperationState,
   IConstrainedValue,
   ICompareState,
+  ActionSectionTab,
 } from '../app-state'
 import {
   findEditorOrDefault,
@@ -2983,6 +2984,22 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
   }
 
+  /** This shouldn't be called directly. See `Dispatcher`. */
+  public async _changeActionSection(
+    selectedAction: ActionSectionTab
+  ): Promise<void> {
+    const repository = this.selectedRepository
+    if (!(repository instanceof Repository)) {
+      return
+    }
+
+    this.repositoryStateCache.update(repository, () => ({
+      selectedActionTab: selectedAction,
+    }))
+
+    this.emitUpdate()
+  }
+
   /**
    * Changes the selection in the changes view to the working directory and
    * optionally selects one or more files from the working directory.
@@ -4128,7 +4145,13 @@ export class AppStore extends TypedBaseStore<IAppState> {
         throw checkoutError
       }
 
-      const stash = (await this.createStashEntry(repository, branch))
+      const stash = (await this.createStashEntry(
+        repository,
+        branch,
+        null,
+        null,
+        false
+      ))
         ? await getLastDesktopStashEntryForBranch(repository, branch)
         : null
 
@@ -4270,6 +4293,50 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     if (await this.createStashAndDropPreviousEntry(repository, currentBranch)) {
+      this.statsStore.increment('stashCreatedOnCurrentBranchCount')
+      await this._refreshRepository(repository)
+      return true
+    }
+
+    return false
+  }
+
+  public async _createStashWithMessage(
+    repository: Repository,
+    stashName: string,
+    description: string,
+    discard: boolean,
+    showConfirmationDialog: boolean
+  ): Promise<boolean> {
+    const repositoryState = this.repositoryStateCache.get(repository)
+    const tip = repositoryState.branchesState.tip
+    const currentBranch = tip.kind === TipState.Valid ? tip.branch : null
+    const hasExistingStash =
+      repositoryState.changesState.stashEntry !== null &&
+      repositoryState.changesState.stashEntry.branchName === currentBranch?.name
+
+    if (currentBranch === null) {
+      return false
+    }
+
+    if (showConfirmationDialog && hasExistingStash) {
+      this._showPopup({
+        type: PopupType.ConfirmOverwriteStash,
+        branchToCheckout: null,
+        repository,
+      })
+      return false
+    }
+
+    if (
+      await this.createStashEntry(
+        repository,
+        currentBranch,
+        stashName,
+        description,
+        discard
+      )
+    ) {
       this.statsStore.increment('stashCreatedOnCurrentBranchCount')
       await this._refreshRepository(repository)
       return true
@@ -4752,12 +4819,12 @@ export class AppStore extends TypedBaseStore<IAppState> {
   ): Promise<boolean> {
     const state = this.repositoryStateCache.get(repository)
     // ensure the user doesn't try and commit again
-    if (state.isCommitting) {
+    if (state.isCommittingOrStashing) {
       return false
     }
 
     this.repositoryStateCache.update(repository, () => ({
-      isCommitting: true,
+      isCommittingOrStashing: true,
     }))
     this.emitUpdate()
 
@@ -4765,7 +4832,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return await fn()
     } finally {
       this.repositoryStateCache.update(repository, () => ({
-        isCommitting: false,
+        isCommittingOrStashing: false,
       }))
       this.emitUpdate()
     }
@@ -7024,7 +7091,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     const gitStore = this.gitStoreCache.get(repository)
 
     const createdStash = await gitStore.performFailableOperation(() =>
-      this.createStashEntry(repository, branch)
+      this.createStashEntry(repository, branch, null, null, false)
     )
 
     if (createdStash === true && entry !== null) {
@@ -7038,12 +7105,25 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return createdStash === true
   }
 
-  private async createStashEntry(repository: Repository, branch: Branch) {
+  private async createStashEntry(
+    repository: Repository,
+    branch: Branch,
+    stashName: string | null,
+    description: string | null,
+    discard: boolean
+  ) {
     const { changesState } = this.repositoryStateCache.get(repository)
     const { workingDirectory } = changesState
     const untrackedFiles = getUntrackedFiles(workingDirectory)
 
-    return createDesktopStashEntry(repository, branch, untrackedFiles)
+    return createDesktopStashEntry(
+      repository,
+      branch,
+      stashName,
+      description,
+      discard,
+      untrackedFiles
+    )
   }
 
   /** This shouldn't be called directly. See `Dispatcher`. */

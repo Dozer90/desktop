@@ -11,10 +11,10 @@ export interface IStashEntry {
   readonly stashSha: string
 
   /** The user-friendly name. */
-  readonly userfriendlyName: string
+  readonly userfriendlyName: string | null
 
   /** A description of the current stash. */
-  readonly description: string
+  readonly description: string | null
 
   /** The list of files this stash touches */
   readonly files: StashedFileChanges

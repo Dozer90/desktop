@@ -13,7 +13,7 @@ interface IContinueRebaseProps {
   readonly repository: Repository
   readonly workingDirectory: WorkingDirectoryStatus
   readonly rebaseConflictState: RebaseConflictState
-  readonly isCommitting: boolean
+  readonly isCommittingOrStashing: boolean
   readonly hasUntrackedChanges: boolean
 }
 
@@ -45,9 +45,9 @@ export class ContinueRebase extends React.Component<IContinueRebaseProps, {}> {
       canCommit = false
     }
 
-    const buttonEnabled = canCommit && !this.props.isCommitting
+    const buttonEnabled = canCommit && !this.props.isCommittingOrStashing
 
-    const loading = this.props.isCommitting ? <Loading /> : undefined
+    const loading = this.props.isCommittingOrStashing ? <Loading /> : undefined
 
     const warnAboutUntrackedFiles = this.props.hasUntrackedChanges ? (
       <div className="warning-untracked-files">

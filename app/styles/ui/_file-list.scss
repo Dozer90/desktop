@@ -41,6 +41,12 @@
       flex-shrink: 0;
     }
 
+    .file-indicator-icon {
+      flex-shrink: 0;
+      margin-right: var(--spacing-third);
+      opacity: 0.6;
+    }
+
     .octicon {
       vertical-align: text-bottom;
     }

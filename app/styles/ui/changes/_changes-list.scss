@@ -274,6 +274,11 @@
   }
 }
 
+.changes-action-tabs {
+  border-top: 2px solid var(--box-border-color);
+  flex-shrink: 0;
+}
+
 .no-changes-filtered {
   display: flex;
   flex: 1;

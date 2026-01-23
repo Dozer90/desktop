@@ -2,6 +2,7 @@ import * as React from 'react'
 
 import { PathLabel } from '../lib/path-label'
 import { Octicon, iconForStatus } from '../octicons'
+import * as octicons from '../octicons/octicons.generated'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { mapStatus } from '../../lib/status'
 import { WorkingDirectoryFileChange } from '../../models/status'
@@ -19,6 +20,10 @@ interface IChangedFileProps {
   readonly focused: boolean
   /** The characters in the file path to highlight */
   readonly matches?: IMatches
+  /** Whether this file is in the selected stash */
+  readonly inSelectedStash?: boolean
+  /** Whether this file is in the working directory (for stash sidebar) */
+  readonly inWorkingDirectory?: boolean
   readonly onIncludeChanged: (
     file: WorkingDirectoryFileChange,
     include: boolean
@@ -50,6 +55,8 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
       checkboxTooltip,
       focused,
       matches,
+      inSelectedStash,
+      inWorkingDirectory,
     } = this.props
     const { status, path } = file
     const fileStatus = mapStatus(status)
@@ -58,13 +65,15 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
     const checkboxWidth = 20
     const statusWidth = 16
     const filePadding = 5
+    const extraIconWidth = (inSelectedStash || inWorkingDirectory) ? 16 : 0
 
     const availablePathWidth =
       availableWidth -
       listItemPadding -
       checkboxWidth -
       filePadding -
-      statusWidth
+      statusWidth -
+      extraIconWidth
 
     const includedText =
       this.props.include === true
@@ -104,6 +113,35 @@ export class ChangedFile extends React.Component<IChangedFileProps, {}> {
         />
 
         <AriaLiveContainer message={pathScreenReaderMessage} />
+
+        {inSelectedStash && (
+          <TooltippedContent
+            ancestorFocused={focused}
+            openOnFocus={true}
+            tooltip="In selected stash"
+            direction={TooltipDirection.EAST}
+          >
+            <Octicon
+              symbol={octicons.archive}
+              className="file-indicator-icon"
+            />
+          </TooltippedContent>
+        )}
+
+        {inWorkingDirectory && (
+          <TooltippedContent
+            ancestorFocused={focused}
+            openOnFocus={true}
+            tooltip="In working directory"
+            direction={TooltipDirection.EAST}
+          >
+            <Octicon
+              symbol={octicons.pencil}
+              className="file-indicator-icon"
+            />
+          </TooltippedContent>
+        )}
+
         <TooltippedContent
           ancestorFocused={focused}
           openOnFocus={true}

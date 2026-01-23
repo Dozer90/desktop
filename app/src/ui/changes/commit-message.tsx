@@ -105,7 +105,7 @@ interface ICommitMessageProps {
   readonly repository: Repository
   readonly repositoryAccount: Account | null
   readonly autocompletionProviders: ReadonlyArray<IAutocompletionProvider<any>>
-  readonly isCommitting?: boolean
+  readonly isCommittingOrStashing?: boolean
   readonly isGeneratingCommitMessage?: boolean
   readonly shouldShowGenerateCommitMessageCallOut?: boolean
   readonly commitToAmend: Commit | null
@@ -349,8 +349,8 @@ export class CommitMessage extends React.Component<
     }
 
     if (
-      prevProps.isCommitting !== this.props.isCommitting &&
-      this.props.isCommitting &&
+      prevProps.isCommittingOrStashing !== this.props.isCommittingOrStashing &&
+      this.props.isCommittingOrStashing &&
       this.state.isCommittingStatusMessage === ''
     ) {
       this.setState({ isCommittingStatusMessage: this.getButtonTitle() })
@@ -795,7 +795,7 @@ export class CommitMessage extends React.Component<
         onAuthorsUpdated={this.onCoAuthorsUpdated}
         authors={this.props.coAuthors}
         autoCompleteProvider={autocompletionProvider}
-        readOnly={this.props.isCommitting === true}
+        readOnly={this.props.isCommittingOrStashing === true}
       />
     )
   }
@@ -820,7 +820,7 @@ export class CommitMessage extends React.Component<
       action: this.onToggleCoAuthors,
       enabled:
         this.props.repository.gitHubRepository !== null &&
-        this.props.isCommitting !== true,
+        this.props.isCommittingOrStashing !== true,
     }
   }
 
@@ -890,7 +890,7 @@ export class CommitMessage extends React.Component<
       accounts,
       onGenerateCommitMessage,
       filesSelected,
-      isCommitting,
+      isCommittingOrStashing,
       isGeneratingCommitMessage,
       commitToAmend,
       shouldShowGenerateCommitMessageCallOut,
@@ -921,7 +921,7 @@ export class CommitMessage extends React.Component<
           ariaLabel={ariaLabel}
           tooltip={ariaLabel}
           disabled={
-            isCommitting === true ||
+            isCommittingOrStashing === true ||
             isGeneratingCommitMessage ||
             noChangesAvailable
           }
@@ -947,7 +947,7 @@ export class CommitMessage extends React.Component<
         ariaLabel={this.toggleCoAuthorsText}
         tooltip={this.toggleCoAuthorsText}
         disabled={
-          this.props.isCommitting === true ||
+          this.props.isCommittingOrStashing === true ||
           this.props.isGeneratingCommitMessage
         }
       >
@@ -1024,10 +1024,11 @@ export class CommitMessage extends React.Component<
       return null
     }
 
-    const { isCommitting, isGeneratingCommitMessage } = this.props
+    const { isCommittingOrStashing, isGeneratingCommitMessage } = this.props
 
     const className = classNames('action-bar', {
-      disabled: isCommitting === true || isGeneratingCommitMessage === true,
+      disabled:
+        isCommittingOrStashing === true || isGeneratingCommitMessage === true,
     })
 
     return (
@@ -1284,10 +1285,10 @@ export class CommitMessage extends React.Component<
   }
 
   private getButtonVerb() {
-    const { isCommitting, commitToAmend } = this.props
+    const { isCommittingOrStashing, commitToAmend } = this.props
 
-    const amendVerb = isCommitting ? 'Amending' : 'Amend'
-    const commitVerb = isCommitting ? 'Committing' : 'Commit'
+    const amendVerb = isCommittingOrStashing ? 'Amending' : 'Amend'
+    const commitVerb = isCommittingOrStashing ? 'Committing' : 'Commit'
     const isAmending = commitToAmend !== null
 
     return isAmending ? amendVerb : commitVerb
@@ -1376,7 +1377,7 @@ export class CommitMessage extends React.Component<
       return `A commit summary is required to commit`
     } else if (!this.props.anyFilesSelected && this.props.anyFilesAvailable) {
       return `Select one or more files to commit`
-    } else if (this.props.isCommitting) {
+    } else if (this.props.isCommittingOrStashing) {
       return `Committing changes…`
     }
 
@@ -1384,15 +1385,17 @@ export class CommitMessage extends React.Component<
   }
 
   private renderSubmitButton() {
-    const { isCommitting, isGeneratingCommitMessage } = this.props
+    const { isCommittingOrStashing, isGeneratingCommitMessage } = this.props
     const isSummaryBlank = isEmptyOrWhitespace(this.summaryOrPlaceholder)
     const buttonEnabled =
       (this.canCommit() || this.canAmend()) &&
-      !isCommitting &&
+      !isCommittingOrStashing &&
       !isSummaryBlank &&
       !isGeneratingCommitMessage
     const loading =
-      isCommitting || isGeneratingCommitMessage ? <Loading /> : undefined
+      isCommittingOrStashing || isGeneratingCommitMessage ? (
+        <Loading />
+      ) : undefined
     const generatingCommitDetailsMessage = isGeneratingCommitMessage
       ? 'Generating commit details…'
       : null
@@ -1515,7 +1518,7 @@ export class CommitMessage extends React.Component<
 
     const {
       placeholder,
-      isCommitting,
+      isCommittingOrStashing,
       isGeneratingCommitMessage,
       commitSpellcheckEnabled,
     } = this.props
@@ -1546,7 +1549,8 @@ export class CommitMessage extends React.Component<
             aria-describedby={ariaDescribedBy}
             onContextMenu={this.onAutocompletingInputContextMenu}
             readOnly={
-              isCommitting === true || isGeneratingCommitMessage === true
+              isCommittingOrStashing === true ||
+              isGeneratingCommitMessage === true
             }
             spellcheck={commitSpellcheckEnabled}
           />
@@ -1583,7 +1587,8 @@ export class CommitMessage extends React.Component<
             onElementRef={this.onDescriptionTextAreaRef}
             onContextMenu={this.onAutocompletingInputContextMenu}
             readOnly={
-              isCommitting === true || isGeneratingCommitMessage === true
+              isCommittingOrStashing === true ||
+              isGeneratingCommitMessage === true
             }
             spellcheck={commitSpellcheckEnabled}
           />

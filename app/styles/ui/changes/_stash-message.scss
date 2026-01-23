@@ -1,0 +1,280 @@
+@import '../../mixins';
+
+/** A React component holding the stash message entry */
+.stash-message-component {
+  flex-direction: column;
+  flex-shrink: 0;
+  margin-top: auto;
+
+  display: flex;
+  background-color: var(--box-alt-background-color);
+
+  padding: var(--spacing);
+
+  &.with-action-bar {
+    .description-focus-container textarea {
+      min-height: 80px;
+
+      @media (max-height: 500px) {
+        min-height: 10px;
+      }
+    }
+  }
+
+  .filter-popover {
+    text-align: right;
+
+    .filter-popover-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+
+      h3 {
+        margin-bottom: var(--spacing-half);
+      }
+    }
+
+    .filter-options {
+      margin: var(--spacing) 0;
+    }
+
+    .filter-options-footer {
+      padding: var(--spacing-half) 0 var(--spacing) 0;
+      margin-top: var(--spacing-quarter);
+      text-align: left;
+    }
+
+    .popover-content {
+      padding: var(--spacing) var(--spacing) 0 var(--spacing);
+    }
+
+    @include close-button;
+
+    .close {
+      margin: 0;
+    }
+  }
+
+  // Name row (stash selector with filter)
+  .name {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    column-gap: var(--spacing-half);
+
+    .name-field {
+      flex: 1;
+      margin-bottom: var(--spacing);
+
+      &.filter-box-container {
+        display: flex;
+        align-items: center;
+        position: relative;
+
+        .filter-button {
+          border-radius: var(--border-radius) 0 0 var(--border-radius);
+          border-right: none;
+          font-weight: var(--font-weight-semibold);
+          color: var(--text-color);
+          justify-content: space-between;
+          display: inline-flex;
+          align-items: center;
+          padding-right: var(--spacing-half);
+          position: relative;
+
+          &.active {
+            span:first-child {
+              color: var(--box-selected-active-background-color);
+            }
+          }
+
+          .active-badge {
+            position: absolute;
+            right: 18px;
+            top: 4px;
+
+            .badge-bg {
+              padding: 1px;
+              border-radius: 50%;
+              background-color: var(--secondary-button-background);
+
+              .badge {
+                width: 5px;
+                height: 5px;
+                border-radius: 50%;
+                background-color: var(--box-selected-active-background-color);
+              }
+            }
+          }
+        }
+
+        .text-box-component {
+          flex: 1;
+
+          input {
+            border-radius: 0;
+            border-right: none;
+          }
+        }
+
+        .dropdown-chevron {
+          padding: var(--spacing-quarter);
+          background-color: var(--box-background-color);
+          border-radius: 0 var(--border-radius) var(--border-radius) 0;
+          border: 1px var(--box-border-contrast-color) solid;
+          border-left: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          height: var(--text-field-height);
+          width: 25px;
+          margin-right: var(--spacing-quarter);
+
+          svg {
+            width: 12px;
+            height: 12px;
+          }
+
+          &:hover {
+            opacity: 0.7;
+          }
+
+          &:focus {
+            outline: none;
+          }
+        }
+      }
+    }
+
+    .stash-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: calc(var(--spacing) * -1);
+      background: var(--background-color);
+      border: var(--contrast-border);
+      border-radius: var(--border-radius);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      z-index: 10;
+      max-height: 300px;
+      overflow-y: auto;
+
+      .stash-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+
+        .stash-list-item {
+          border-bottom: var(--base-border);
+
+          &:last-child {
+            border-bottom: none;
+          }
+
+          button {
+            width: 100%;
+            padding: var(--spacing);
+            background: var(--box-background-color);
+            border: none;
+            cursor: pointer;
+            text-align: left;
+            display: block;
+
+            &:hover {
+              background: var(--box-hover-background-color);
+            }
+
+            &:focus {
+              outline: none;
+              background: var(--box-selected-background-color);
+            }
+          }
+
+          &.new-stash button {
+            font-weight: var(--font-weight-semibold);
+            color: var(--link-button-color);
+          }
+
+          .stash-item-content {
+            .stash-name {
+              font-weight: var(--font-weight-semibold);
+              margin-bottom: var(--spacing-third);
+              @include ellipsis;
+            }
+
+            .stash-description {
+              font-size: var(--font-size-sm);
+              color: var(--text-secondary-color);
+              @include ellipsis;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Description focus container (matching commit message)
+  .description-focus-container {
+    border: var(--contrast-border);
+    border-radius: var(--border-radius);
+    background: var(--box-background-color);
+    cursor: text;
+
+    &.focus-within {
+      outline: none;
+      border-color: var(--focus-color);
+      box-shadow: 0 0 0 1px var(--text-field-focus-shadow-color);
+    }
+
+    textarea {
+      border: none;
+      color: currentColor;
+      font-size: var(--font-size);
+      font-family: var(--font-family-sans-serif);
+      padding: var(--spacing-half);
+      resize: none;
+      height: 90px;
+      width: 100%;
+      background: transparent;
+
+      &::placeholder {
+        color: var(--text-secondary-color);
+      }
+
+      &:focus {
+        outline: none;
+      }
+
+      &:read-only {
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  // Stash options (checkbox container) - centered above button
+  .stash-options {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: var(--spacing);
+    margin-bottom: var(--spacing-half);
+
+    .checkbox-component {
+      margin: 0;
+
+      label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-half);
+      }
+    }
+  }
+
+  // Submit button
+  button[type='submit'] {
+    width: 100%;
+  }
+}

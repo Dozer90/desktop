@@ -22,6 +22,7 @@ import {
   CherryPickConflictState,
   MultiCommitOperationConflictState,
   IMultiCommitOperationState,
+  ActionSectionTab,
 } from '../../lib/app-state'
 import { assertNever, fatalError } from '../../lib/fatal-error'
 import {
@@ -292,6 +293,11 @@ export class Dispatcher {
     section: RepositorySectionTab
   ): Promise<void> {
     return this.appStore._changeRepositorySection(repository, section)
+  }
+
+  /** Change the action to take on the selected files in the sidebar. */
+  public changeActionSection(section: ActionSectionTab): Promise<void> {
+    return this.appStore._changeActionSection(section)
   }
 
   /**
@@ -2667,6 +2673,22 @@ export class Dispatcher {
   ) {
     return this.appStore._createStashForCurrentBranch(
       repository,
+      showConfirmationDialog
+    )
+  }
+
+  public createStashWithMessage(
+    repository: Repository,
+    stashName: string,
+    description: string,
+    discard: boolean,
+    showConfirmationDialog: boolean = true
+  ) {
+    return this.appStore._createStashWithMessage(
+      repository,
+      stashName,
+      description,
+      discard,
       showConfirmationDialog
     )
   }

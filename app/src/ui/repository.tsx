@@ -247,8 +247,9 @@ export class RepositoryView extends React.Component<
         mostRecentLocalCommit={mostRecentLocalCommit}
         issuesStore={this.props.issuesStore}
         availableWidth={availableWidth}
+        selectedActionTab={this.props.state.selectedActionTab}
         gitHubUserStore={this.props.gitHubUserStore}
-        isCommitting={this.props.state.isCommitting}
+        isCommittingOrStashing={this.props.state.isCommittingOrStashing}
         isGeneratingCommitMessage={this.props.state.isGeneratingCommitMessage}
         shouldShowGenerateCommitMessageCallOut={
           this.props.shouldShowGenerateCommitMessageCallOut
@@ -552,7 +553,7 @@ export class RepositoryView extends React.Component<
           dispatcher={this.props.dispatcher}
           file={selectedFile}
           diff={diff}
-          isCommitting={this.props.state.isCommitting}
+          isCommittingOrStashing={this.props.state.isCommittingOrStashing}
           imageDiffType={this.props.imageDiffType}
           hideWhitespaceInDiff={this.props.hideWhitespaceInChangesDiff}
           showSideBySideDiff={this.props.showSideBySideDiff}

@@ -44,7 +44,7 @@ interface IConflictsDialogProps {
 }
 
 interface IConflictsDialogState {
-  readonly isCommitting: boolean
+  readonly isCommittingOrStashing: boolean
   readonly isAborting: boolean
   readonly isFileResolutionOptionsMenuOpen: boolean
   readonly countResolved: number | null
@@ -62,7 +62,7 @@ export class ConflictsDialog extends React.Component<
   public constructor(props: IConflictsDialogProps) {
     super(props)
     this.state = {
-      isCommitting: false,
+      isCommittingOrStashing: false,
       isAborting: false,
       isFileResolutionOptionsMenuOpen: false,
       countResolved: null,
@@ -116,7 +116,7 @@ export class ConflictsDialog extends React.Component<
    *  Invokes submit callback and dismisses modal
    */
   private onSubmit = async () => {
-    this.setState({ isCommitting: true })
+    this.setState({ isCommittingOrStashing: true })
     await this.props.onSubmit()
   }
 
@@ -243,12 +243,12 @@ export class ConflictsDialog extends React.Component<
     return (
       <Dialog
         id="conflicts-dialog"
-        dismissDisabled={this.state.isCommitting}
+        dismissDisabled={this.state.isCommittingOrStashing}
         onDismissed={this.props.onDismissed}
         onSubmit={this.onSubmit}
         title={headerTitle}
-        loading={this.state.isCommitting}
-        disabled={this.state.isCommitting}
+        loading={this.state.isCommittingOrStashing}
+        disabled={this.state.isCommittingOrStashing}
       >
         {this.renderBanner(conflictedFiles.length)}
         <DialogContent>

@@ -418,6 +418,11 @@ export enum RepositorySectionTab {
   History,
 }
 
+export enum ActionSectionTab {
+  Commit,
+  Stash,
+}
+
 /**
  * Stores information about a merge conflict when it occurs
  */
@@ -492,6 +497,7 @@ export interface IRepositoryState {
   readonly changesState: IChangesState
   readonly compareState: ICompareState
   readonly selectedSection: RepositorySectionTab
+  readonly selectedActionTab: ActionSectionTab
 
   /**
    * The state of the current pull request view in the repository.
@@ -534,8 +540,8 @@ export interface IRepositoryState {
   /** Is a push/pull/fetch in progress? */
   readonly isPushPullFetchInProgress: boolean
 
-  /** Is a commit in progress? */
-  readonly isCommitting: boolean
+  /** Is a commit or stash in progress? */
+  readonly isCommittingOrStashing: boolean
 
   /** Is generating a commit message? */
   readonly isGeneratingCommitMessage: boolean

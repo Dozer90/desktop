@@ -25,6 +25,9 @@ export const DesktopStashEntryMarker = '!!GitHub_Desktop'
  */
 
 const stashEntryMessageRe = /On ([^:]+): (.+)$/
+const desktopStashEntryMessageRe = new RegExp(
+  `${DesktopStashEntryMarker}<([^|>]+)(?:\\s*\\|\\s*([^>]+))?>\\s*(.*)`
+)
 
 type StashResult = {
   /** The stash entries created by Desktop and other tools */
@@ -111,10 +114,14 @@ export async function getStashes(repository: Repository): Promise<StashResult> {
  */
 export async function moveStashEntry(
   repository: Repository,
-  { stashSha, parents, tree }: IStashEntry,
+  { stashSha, parents, tree, userfriendlyName, description }: IStashEntry,
   branchName: string
 ) {
-  const message = `On ${branchName}: ${createDesktopStashMessage(branchName)}`
+  const message = `On ${branchName}: ${createDesktopStashMessage(
+    branchName,
+    userfriendlyName,
+    description
+  )}`
   const parentArgs = parents.flatMap(p => ['-p', p])
 
   const { stdout: commitId } = await git(
@@ -152,8 +159,22 @@ export async function getLastDesktopStashEntryForBranch(
 }
 
 /** Creates a stash entry message that indicates the entry was created by Desktop */
-export function createDesktopStashMessage(branchName: string) {
-  return `${DesktopStashEntryMarker}<${branchName}>`
+export function createDesktopStashMessage(
+  branchName: string,
+  stashName: string | null,
+  description: string | null
+): string {
+  let msg = `${DesktopStashEntryMarker}<${branchName}`
+  const trimmedName = stashName ? stashName.trim() : ''
+  if (trimmedName.length > 0) {
+    msg += ` | ${trimmedName}`
+  }
+  msg += '>'
+  const trimmedDescription = description ? description.trim() : ''
+  if (trimmedDescription.length > 0) {
+    msg += ` ${trimmedDescription}`
+  }
+  return msg
 }
 
 /**
@@ -162,6 +183,9 @@ export function createDesktopStashMessage(branchName: string) {
 export async function createDesktopStashEntry(
   repository: Repository,
   branch: Branch | string,
+  stashName: string | null,
+  description: string | null,
+  discard: boolean,
   untrackedFilesToStage: ReadonlyArray<WorkingDirectoryFileChange>
 ): Promise<boolean> {
   // We must ensure that no untracked files are present before stashing
@@ -174,9 +198,34 @@ export async function createDesktopStashEntry(
   await stageFiles(repository, fullySelectedUntrackedFiles)
 
   const branchName = typeof branch === 'string' ? branch : branch.name
-  const message = createDesktopStashMessage(branchName)
-  const args = ['stash', 'push', '-m', message]
+  const message = `On ${branchName}: ${createDesktopStashMessage(
+    branchName,
+    stashName,
+    description
+  )}`
 
+  if (!discard) {
+    // When not discarding, we create the stash first and then store so it does not
+    // modify the working directory
+    let args = ['stash', 'create']
+    const { stdout: stashSha } = await git(
+      args,
+      repository.path,
+      'createStashCommit'
+    )
+    const trimmedSha = stashSha.trim()
+    if (trimmedSha.length === 0) {
+      return false
+    }
+
+    // Now, we store the files in the newly created stash
+    args = ['stash', 'store', '-m', message, trimmedSha]
+    await git(args, repository.path, 'storeStashEntry')
+
+    return true
+  }
+
+  const args = ['stash', 'push', '-m', message]
   const result = await git(args, repository.path, 'createStashEntry').catch(
     e => {
       // Note: 2024: Here be dragons. As I converted this code to get rid of the
@@ -209,7 +258,7 @@ export async function createDesktopStashEntry(
         // a valid stash was created and this should not interfere with the checkout
 
         log.info(
-          `[createDesktopStashEntry] a stash was created successfully but exit code ${result.exitCode} reported. stderr: ${result.stderr}`
+          `[createDesktopStashEntry] a stash was created successfully but exit code ${e.result.exitCode} reported. stderr: ${e.result.stderr}`
         )
         return e.result
       }
@@ -330,22 +379,53 @@ export async function applyStashEntry(
  * Parse a stash message and extract all relevant information
  *
  * Git stash messages have the format: "On <branch>: <description>"
- * Git Desktop uses:                   "On <branch>: !!GitHub_Desktop<branch>"
+ * Git Desktop uses the following:     "On <branch>: !!GitHub_Desktop<branch | stashName> description"
+ *                                     "On <branch>: !!GitHub_Desktop<branch | stashName>"
+ *                                     "On <branch>: !!GitHub_Desktop<branch> description"
+ *                                     "On <branch>: !!GitHub_Desktop<branch>"
  */
 
 function parseStashMessage(message: string): ParsedStashMessage {
-  const match = stashEntryMessageRe.exec(message)
+  const match = stashEntryMessageRe.exec(message) // Captures: On <branch>: <everything-else>
   const isGitHubDesktop = extractIsGitHubDesktopStashEntry(message)
   const branch = match ? match[1] : undefined
-  const description = match ? match[2] : message
+  const fullDescription = match ? match[2] : message
+
+  let userfriendlyName = ''
+  let description = fullDescription
+
+  if (isGitHubDesktop) {
+    // Pattern: !!GitHub_Desktop<branch | stashName> optional-description
+    // or:      !!GitHub_Desktop<branch> optional-description
+    const desktopMatch = desktopStashEntryMessageRe.exec(fullDescription)
+
+    if (desktopMatch) {
+      // desktopMatch[1] = branch (we already have this)
+      // desktopMatch[2] = stashName (if it exists after the |)
+      // desktopMatch[3] = everything after the >
+
+      const stashName = desktopMatch[2] ? desktopMatch[2].trim() : ''
+      const afterMessage = desktopMatch[3] ? desktopMatch[3].trim() : ''
+
+      userfriendlyName = stashName
+      description = afterMessage || stashName || fullDescription
+    } else {
+      // Fallback if the regex doesn't match (shouldn't happen for valid Desktop stashes)
+      description = fullDescription
+    }
+  } else {
+    // Non-Desktop stash: use the whole description as the friendly name
+    userfriendlyName = fullDescription
+  }
 
   return {
     branch,
     description,
-    userfriendlyName: isGitHubDesktop ? '' : description,
+    userfriendlyName,
     isGitHubDesktop,
   }
 }
+
 function extractIsGitHubDesktopStashEntry(message: string): boolean {
   return message.includes(DesktopStashEntryMarker)
 }
