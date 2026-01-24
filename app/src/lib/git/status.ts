@@ -228,6 +228,7 @@ export async function getStatus(
     '--branch',
     '--porcelain=2',
     '-z',
+    '--find-renames',
   ]
 
   const { stdout, exitCode } = await git(args, repository.path, 'getStatus', {

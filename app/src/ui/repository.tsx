@@ -15,6 +15,7 @@ import {
   RepositorySectionTab,
   ChangesSelectionKind,
   IConstrainedValue,
+  ActionSectionTab,
 } from '../lib/app-state'
 import { Dispatcher } from './dispatcher'
 import { IssuesStore, GitHubUserStore } from '../lib/stores'
@@ -25,6 +26,8 @@ import { ImageDiffType } from '../models/diff'
 import { IMenu } from '../models/app-menu'
 import { StashDiffViewer } from './stashing'
 import { StashedChangesLoadStates } from '../models/stash-entry'
+import { StashedFilesList } from './changes/stashed-files-list'
+import { StashActionsPanel } from './changes/stash-actions-panel'
 import { TutorialPanel, TutorialWelcome, TutorialDone } from './tutorial'
 import { TutorialStep, isValidTutorialStep } from '../models/tutorial-step'
 import { openFile } from './lib/open-file'
@@ -385,6 +388,84 @@ export class RepositoryView extends React.Component<
     }
   }
 
+  private handleStashSidebarWidthReset = () => {
+    // TODO: Add dispatcher method for resetting stash sidebar width
+    // this.props.dispatcher.resetStashSidebarWidth()
+  }
+
+  private handleStashSidebarResize = (width: number) => {
+    // TODO: Add dispatcher method for setting stash sidebar width
+    // this.props.dispatcher.setStashSidebarWidth(width)
+  }
+
+  private onStashedFileSelectionChanged = (file: any) => {
+    // Select the stashed file to show its diff
+    this.props.dispatcher.selectStashedFile(this.props.repository, file)
+  }
+
+  private onStashedFileIncludeChanged = (file: any, include: boolean) => {
+    // TODO: Handle checkbox state for discard operation
+    console.log('Include changed:', file.path, include)
+  }
+
+  private renderStashFilesSidebar(): JSX.Element | null {
+    const { state } = this.props
+    const { changesState, selectedSection, selectedActionTab } = state
+
+    // Only show in Changes section
+    if (selectedSection !== RepositorySectionTab.Changes) {
+      return null
+    }
+
+    // Only show when Stash tab is active
+    if (selectedActionTab !== ActionSectionTab.Stash) {
+      return null
+    }
+
+    const { stashEntry, workingDirectory } = changesState
+
+    // Only show when there's a selected stash
+    if (stashEntry === null) {
+      return null
+    }
+
+    // Only show when stash files are loaded
+    if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
+      return null
+    }
+
+    return (
+      <Resizable
+        id="stash-files-sidebar"
+        width={this.props.stashedFilesWidth.value}
+        maximumWidth={this.props.stashedFilesWidth.max}
+        minimumWidth={this.props.stashedFilesWidth.min}
+        onReset={this.handleStashSidebarWidthReset}
+        onResize={this.handleStashSidebarResize}
+        description="Stash files sidebar"
+      >
+        <StashedFilesList
+          repository={this.props.repository}
+          dispatcher={this.props.dispatcher}
+          stashEntry={stashEntry}
+          selectedFileIDs={[]}
+          onFileSelectionChanged={this.onStashedFileSelectionChanged}
+          onIncludeChanged={this.onStashedFileIncludeChanged}
+          availableWidth={this.props.stashedFilesWidth.value}
+          workingDirectoryFiles={workingDirectory.files}
+        />
+        <StashActionsPanel
+          repository={this.props.repository}
+          dispatcher={this.props.dispatcher}
+          stashEntry={stashEntry}
+          selectedFiles={[]}
+          isRestoring={false}
+          isDiscarding={false}
+        />
+      </Resizable>
+    )
+  }
+
   private renderStashedChangesContent(): JSX.Element | null {
     const { changesState } = this.props.state
     const { selection, stashEntry, stashEntries } = changesState
@@ -599,6 +680,7 @@ export class RepositoryView extends React.Component<
       <UiView id="repository">
         {this.renderSidebar()}
         {this.renderContent()}
+        {this.renderStashFilesSidebar()}
         {this.maybeRenderTutorialPanel()}
       </UiView>
     )

@@ -30,3 +30,12 @@
     }
   }
 }
+
+// Stash files sidebar (right side)
+#stash-files-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--box-border-color);
+  height: 100%;
+  background-color: var(--box-background-color);
+}

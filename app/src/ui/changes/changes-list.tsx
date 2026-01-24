@@ -895,6 +895,16 @@ export class ChangesList extends React.Component<
 
   private onSelectedStashChanged = (stash: IStashEntry | null) => {
     this.setState({ selectedStashForViewing: stash })
+
+    // Update global state to show right sidebar
+    if (stash !== null) {
+      this.props.dispatcher.setSelectedStashEntry(
+        this.props.repository,
+        stash.stashSha
+      )
+    } else {
+      this.props.dispatcher.hideStashedChanges(this.props.repository)
+    }
   }
 
   private renderStashMessageForm = (): JSX.Element => {
