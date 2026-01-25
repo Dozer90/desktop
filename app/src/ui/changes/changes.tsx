@@ -6,7 +6,10 @@ import {
   ImageDiffType,
   ITextDiff,
 } from '../../models/diff'
-import { WorkingDirectoryFileChange } from '../../models/status'
+import {
+  CommittedFileChange,
+  WorkingDirectoryFileChange,
+} from '../../models/status'
 import { Repository } from '../../models/repository'
 import { Dispatcher } from '../dispatcher'
 import { SeamlessDiffSwitcher } from '../diff/seamless-diff-switcher'
@@ -16,6 +19,8 @@ interface IChangesProps {
   readonly repository: Repository
   readonly file: WorkingDirectoryFileChange
   readonly diff: IDiff | null
+  readonly stashedFile: CommittedFileChange | null
+  readonly stashedFileDiff: IDiff | null
   readonly dispatcher: Dispatcher
   readonly imageDiffType: ImageDiffType
 
@@ -100,8 +105,12 @@ export class Changes extends React.Component<IChangesProps, {}> {
   }
 
   public render() {
+    const hasStashedDiff =
+      this.props.stashedFile !== null && this.props.stashedFileDiff !== null
+
     return (
       <div className="diff-container">
+        <div className="diff-context-label">Ours (Working Directory)</div>
         <DiffHeader
           path={this.props.file.path}
           status={this.props.file.status}
@@ -132,6 +141,37 @@ export class Changes extends React.Component<IChangesProps, {}> {
           onChangeImageDiffType={this.props.onChangeImageDiffType}
           onHideWhitespaceInDiffChanged={this.onHideWhitespaceInDiffChanged}
         />
+
+        {hasStashedDiff ? (
+          <>
+            <div className="diff-context-label">Theirs (Stash)</div>
+            <DiffHeader
+              path={this.props.stashedFile!.path}
+              status={this.props.stashedFile!.status}
+              diff={this.props.stashedFileDiff}
+              showSideBySideDiff={this.props.showSideBySideDiff}
+              onShowSideBySideDiffChanged={this.onShowSideBySideDiffChanged}
+              hideWhitespaceInDiff={this.props.hideWhitespaceInDiff}
+              onHideWhitespaceInDiffChanged={this.onHideWhitespaceInDiffChanged}
+              onDiffOptionsOpened={this.props.onDiffOptionsOpened}
+            />
+
+            <SeamlessDiffSwitcher
+              repository={this.props.repository}
+              imageDiffType={this.props.imageDiffType}
+              file={this.props.stashedFile!}
+              readOnly={true}
+              diff={this.props.stashedFileDiff}
+              hideWhitespaceInDiff={this.props.hideWhitespaceInDiff}
+              showSideBySideDiff={this.props.showSideBySideDiff}
+              showDiffCheckMarks={false}
+              onOpenBinaryFile={this.props.onOpenBinaryFile}
+              onOpenSubmodule={this.props.onOpenSubmodule}
+              onChangeImageDiffType={this.props.onChangeImageDiffType}
+              onHideWhitespaceInDiffChanged={this.onHideWhitespaceInDiffChanged}
+            />
+          </>
+        ) : null}
       </div>
     )
   }

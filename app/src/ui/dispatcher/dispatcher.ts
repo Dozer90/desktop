@@ -104,6 +104,7 @@ import {
 import { MergeTreeResult } from '../../models/merge'
 import { UncommittedChangesStrategy } from '../../models/uncommitted-changes-strategy'
 import { IStashEntry } from '../../models/stash-entry'
+import { EmptyStashBehavior } from '../../lib/app-state'
 import { WorkflowPreferences } from '../../models/workflow-preferences'
 import { resolveWithin } from '../../lib/path'
 import { CherryPickResult } from '../../lib/git/cherry-pick'
@@ -2254,6 +2255,11 @@ export class Dispatcher {
     return this.appStore._setShowSideBySideDiff(showSideBySideDiff)
   }
 
+  /** Toggle rename detection in working directory status */
+  public setDetectRenamesInStatus(detectRenamesInStatus: boolean) {
+    return this.appStore._setDetectRenamesInStatus(detectRenamesInStatus)
+  }
+
   /** Install the global Git LFS filters. */
   public installGlobalLFSFilters(force: boolean): Promise<void> {
     return this.appStore._installGlobalLFSFilters(force)
@@ -2470,6 +2476,10 @@ export class Dispatcher {
 
   public setConfirmDiscardStashSetting(value: boolean) {
     return this.appStore._setConfirmDiscardStashSetting(value)
+  }
+
+  public setEmptyStashBehaviorSetting(value: EmptyStashBehavior) {
+    return this.appStore._setEmptyStashBehaviorSetting(value)
   }
 
   public setConfirmCheckoutCommitSetting(value: boolean) {
@@ -2693,9 +2703,54 @@ export class Dispatcher {
     )
   }
 
+  public addFilesToStashEntry(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    stashName: string,
+    description: string,
+    discard: boolean,
+    skipOverwritePrompt: boolean = false
+  ) {
+    return this.appStore._addFilesToExistingStash(
+      repository,
+      stashEntry,
+      stashName,
+      description,
+      discard,
+      skipOverwritePrompt
+    )
+  }
+
+  public restoreStashFiles(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    files: ReadonlyArray<CommittedFileChange>,
+    discardFromStash: boolean
+  ) {
+    return this.appStore._restoreStashFiles(
+      repository,
+      stashEntry,
+      files,
+      discardFromStash
+    )
+  }
+
+  public discardStashFiles(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    files: ReadonlyArray<CommittedFileChange>
+  ) {
+    return this.appStore._discardStashFiles(repository, stashEntry, files)
+  }
+
   /** Drops the given stash in the given repository */
   public dropSelectedStash(repository: Repository) {
     return this.appStore._dropSelectedStashEntry(repository)
+  }
+
+  /** Drops the provided stash entry in the given repository */
+  public dropStashEntry(repository: Repository, stashEntry: IStashEntry) {
+    return this.appStore._dropStashEntry(repository, stashEntry)
   }
 
   /** Pop the given stash in the given repository */
@@ -2727,6 +2782,10 @@ export class Dispatcher {
   /** Set the selected stash entry for the given repository */
   public setSelectedStashEntry(repository: Repository, stashEntrySha: string) {
     return this.appStore._setSelectedStashEntry(repository, stashEntrySha)
+  }
+
+  public clearSelectedStashEntry(repository: Repository) {
+    return this.appStore._clearSelectedStashEntry(repository)
   }
 
   /** Hide the diff for stashed changes */

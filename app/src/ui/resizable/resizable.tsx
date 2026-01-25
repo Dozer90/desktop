@@ -1,4 +1,5 @@
 import * as React from 'react'
+import classNames from 'classnames'
 import { clamp } from '../../lib/clamp'
 import { AriaLiveContainer } from '../accessibility/aria-live-container'
 
@@ -81,10 +82,12 @@ export class Resizable extends React.Component<
     }
 
     const deltaX = e.clientX - this.startX
-    const newWidth = this.startWidth + deltaX
+    const directionMultiplier = this.props.handlePosition === 'left' ? -1 : 1
+    const adjustedDeltaX = deltaX * directionMultiplier
+    const newWidth = this.startWidth + adjustedDeltaX
 
     this.updateResizeMessage(
-      deltaX > 0 ? ResizeDirection.Increase : ResizeDirection.Decrease
+      adjustedDeltaX > 0 ? ResizeDirection.Increase : ResizeDirection.Decrease
     )
     this.props.onResize(this.clampWidth(newWidth))
     e.preventDefault()
@@ -193,10 +196,13 @@ export class Resizable extends React.Component<
       minWidth: this.props.minimumWidth,
     }
 
+    const handlePositionClass =
+      this.props.handlePosition === 'left' ? 'resize-handle-left' : null
+
     return (
       <div
         id={this.props.id}
-        className={resizableComponentClass}
+        className={classNames(resizableComponentClass, handlePositionClass)}
         style={style}
         ref={this.onResizableRef}
       >
@@ -240,6 +246,9 @@ export interface IResizableProps {
 
   /** Used to describe which resizable was updated to screen reader users */
   readonly description: string
+
+  /** Which side the resize handle should appear on. Defaults to right. */
+  readonly handlePosition?: 'left' | 'right'
 
   /**
    * Handler called when the width of the component has changed

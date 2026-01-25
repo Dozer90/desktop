@@ -900,6 +900,15 @@
   min-width: 0;
   max-height: 100%;
 
+  .diff-context-label {
+    padding: var(--spacing-half) var(--spacing);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary-color);
+    background: var(--box-background-color);
+    border-bottom: 1px solid var(--diff-border-color);
+  }
+
   .header {
     span {
       user-select: text;

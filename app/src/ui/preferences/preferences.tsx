@@ -27,6 +27,7 @@ import {
   UncommittedChangesStrategy,
   defaultUncommittedChangesStrategy,
 } from '../../models/uncommitted-changes-strategy'
+import { EmptyStashBehavior } from '../../lib/app-state'
 import { Octicon } from '../octicons'
 import * as octicons from '../octicons/octicons.generated'
 import {
@@ -66,6 +67,7 @@ interface IPreferencesProps {
   readonly confirmCheckoutCommit: boolean
   readonly confirmForcePush: boolean
   readonly confirmUndoCommit: boolean
+  readonly emptyStashBehavior: EmptyStashBehavior
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
   readonly selectedExternalEditor: string | null
@@ -80,6 +82,7 @@ interface IPreferencesProps {
   readonly onEditGlobalGitConfig: () => void
   readonly underlineLinks: boolean
   readonly showDiffCheckMarks: boolean
+  readonly detectRenamesInStatus: boolean
 }
 
 interface IPreferencesState {
@@ -103,6 +106,7 @@ interface IPreferencesState {
   readonly confirmCheckoutCommit: boolean
   readonly confirmForcePush: boolean
   readonly confirmUndoCommit: boolean
+  readonly emptyStashBehavior: EmptyStashBehavior
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
   readonly availableEditors: ReadonlyArray<string>
@@ -132,6 +136,8 @@ interface IPreferencesState {
   readonly underlineLinks: boolean
 
   readonly showDiffCheckMarks: boolean
+
+  readonly detectRenamesInStatus: boolean
 }
 
 /**
@@ -178,6 +184,7 @@ export class Preferences extends React.Component<
       confirmCheckoutCommit: false,
       confirmForcePush: false,
       confirmUndoCommit: false,
+      emptyStashBehavior: this.props.emptyStashBehavior,
       askForConfirmationOnCommitFilteredChanges: false,
       uncommittedChangesStrategy: defaultUncommittedChangesStrategy,
       selectedExternalEditor: this.props.selectedExternalEditor,
@@ -189,6 +196,7 @@ export class Preferences extends React.Component<
       isLoadingGitConfig: true,
       underlineLinks: this.props.underlineLinks,
       showDiffCheckMarks: this.props.showDiffCheckMarks,
+      detectRenamesInStatus: this.props.detectRenamesInStatus,
     }
   }
 
@@ -246,9 +254,11 @@ export class Preferences extends React.Component<
       confirmCheckoutCommit: this.props.confirmCheckoutCommit,
       confirmForcePush: this.props.confirmForcePush,
       confirmUndoCommit: this.props.confirmUndoCommit,
+      emptyStashBehavior: this.props.emptyStashBehavior,
       askForConfirmationOnCommitFilteredChanges:
         this.props.askForConfirmationOnCommitFilteredChanges,
       uncommittedChangesStrategy: this.props.uncommittedChangesStrategy,
+      detectRenamesInStatus: this.props.detectRenamesInStatus,
       availableShells,
       availableEditors,
       useCustomEditor: this.props.useCustomEditor,
@@ -444,6 +454,10 @@ export class Preferences extends React.Component<
               onDefaultBranchChanged={this.onDefaultBranchChanged}
               isLoadingGitConfig={this.state.isLoadingGitConfig}
               onEditGlobalGitConfig={this.props.onEditGlobalGitConfig}
+              detectRenamesInStatus={this.state.detectRenamesInStatus}
+              onDetectRenamesInStatusChanged={
+                this.onDetectRenamesInStatusChanged
+              }
             />
           </>
         )
@@ -479,6 +493,7 @@ export class Preferences extends React.Component<
             confirmCheckoutCommit={this.state.confirmCheckoutCommit}
             confirmForcePush={this.state.confirmForcePush}
             confirmUndoCommit={this.state.confirmUndoCommit}
+            emptyStashBehavior={this.state.emptyStashBehavior}
             askForConfirmationOnCommitFilteredChanges={
               this.state.askForConfirmationOnCommitFilteredChanges
             }
@@ -493,6 +508,7 @@ export class Preferences extends React.Component<
               this.onConfirmDiscardChangesPermanentlyChanged
             }
             onConfirmUndoCommitChanged={this.onConfirmUndoCommitChanged}
+            onEmptyStashBehaviorChanged={this.onEmptyStashBehaviorChanged}
             onAskForConfirmationOnCommitFilteredChanges={
               this.onAskForConfirmationOnCommitFilteredChanges
             }
@@ -616,6 +632,10 @@ export class Preferences extends React.Component<
     this.setState({ confirmUndoCommit: value })
   }
 
+  private onEmptyStashBehaviorChanged = (value: EmptyStashBehavior) => {
+    this.setState({ emptyStashBehavior: value })
+  }
+
   private onAskForConfirmationOnCommitFilteredChanges = (value: boolean) => {
     this.setState({ askForConfirmationOnCommitFilteredChanges: value })
   }
@@ -677,6 +697,10 @@ export class Preferences extends React.Component<
 
   private onShowDiffCheckMarksChanged = (showDiffCheckMarks: boolean) => {
     this.setState({ showDiffCheckMarks })
+  }
+
+  private onDetectRenamesInStatusChanged = (detectRenamesInStatus: boolean) => {
+    this.setState({ detectRenamesInStatus })
   }
 
   private onSelectedTabSizeChanged = (tabSize: number) => {
@@ -798,6 +822,8 @@ export class Preferences extends React.Component<
       this.state.confirmDiscardStash
     )
 
+    await dispatcher.setEmptyStashBehaviorSetting(this.state.emptyStashBehavior)
+
     await dispatcher.setConfirmCheckoutCommitSetting(
       this.state.confirmCheckoutCommit
     )
@@ -825,6 +851,10 @@ export class Preferences extends React.Component<
     dispatcher.setUnderlineLinksSetting(this.state.underlineLinks)
 
     dispatcher.setDiffCheckMarksSetting(this.state.showDiffCheckMarks)
+
+    if (this.props.detectRenamesInStatus !== this.state.detectRenamesInStatus) {
+      dispatcher.setDetectRenamesInStatus(this.state.detectRenamesInStatus)
+    }
 
     this.props.onDismissed()
   }

@@ -1,4 +1,5 @@
 import * as Path from 'path'
+import { promises as Fs } from 'fs'
 import {
   AccountsStore,
   CloningRepositoriesStore,
@@ -29,6 +30,7 @@ import {
   DiffSelectionType,
   DiffType,
   ImageDiffType,
+  IDiff,
   ITextDiff,
 } from '../../models/diff'
 import { FetchType } from '../../models/fetch'
@@ -59,6 +61,8 @@ import {
   CommittedFileChange,
   WorkingDirectoryFileChange,
   WorkingDirectoryStatus,
+  AppFileStatus,
+  CopiedOrRenamedFileStatus,
   AppFileStatusKind,
 } from '../../models/status'
 import { TipState, tipEquals, IValidBranch } from '../../models/tip'
@@ -120,6 +124,7 @@ import {
   IRepositoryState,
   ChangesSelectionKind,
   ChangesWorkingDirectorySelection,
+  EmptyStashBehavior,
   isRebaseConflictState,
   isCherryPickConflictState,
   IFileListFilterState,
@@ -185,6 +190,8 @@ import {
   getBranchMergeBaseChangedFiles,
   getBranchMergeBaseDiff,
   checkoutCommit,
+  checkoutPaths,
+  checkoutPathsAtCommit,
   getRemoteURL,
   getGlobalConfigPath,
   getFilesDiffText,
@@ -254,6 +261,8 @@ import { Banner, BannerType } from '../../models/banner'
 import { ComputedAction } from '../../models/computed-action'
 import {
   createDesktopStashEntry,
+  createDesktopStashEntryForPaths,
+  getStashedFiles,
   getLastDesktopStashEntryForBranch,
   popStashEntry,
   applyStashEntry,
@@ -356,6 +365,12 @@ const LastSelectedRepositoryIDKey = 'last-selected-repository-id'
 
 const lastSelectedStashEntryKey = 'last-selected-stash-entry'
 
+type IRenamedWorkingFile = {
+  readonly originalPath: string
+  readonly workingPath: string
+  readonly restoreBeforeStash: boolean
+}
+
 const RecentRepositoriesKey = 'recently-selected-repositories'
 /**
  *  maximum number of repositories shown in the "Recent" repositories group
@@ -391,6 +406,7 @@ const confirmCheckoutCommitDefault: boolean = true
 const askForConfirmationOnForcePushDefault = true
 const confirmUndoCommitDefault: boolean = true
 const confirmCommitFilteredChangesDefault: boolean = true
+const emptyStashBehaviorDefault: EmptyStashBehavior = EmptyStashBehavior.Ask
 const askToMoveToApplicationsFolderKey: string = 'askToMoveToApplicationsFolder'
 const confirmRepoRemovalKey: string = 'confirmRepoRemoval'
 const showCommitLengthWarningKey: string = 'showCommitLengthWarning'
@@ -403,6 +419,7 @@ const confirmForcePushKey: string = 'confirmForcePush'
 const confirmUndoCommitKey: string = 'confirmUndoCommit'
 const confirmCommitFilteredChangesKey: string =
   'confirmCommitFilteredChangesKey'
+const emptyStashBehaviorKey: string = 'empty-stash-behavior'
 
 const uncommittedChangesStrategyKey = 'uncommittedChangesStrategyKind'
 
@@ -428,6 +445,7 @@ const tabSizeKey: string = 'tab-size'
 const shellKey = 'shell'
 
 const repositoryIndicatorsEnabledKey = 'enable-repository-indicators'
+const detectRenamesInStatusKey = 'detect-renames-in-status'
 
 // background fetching should occur hourly when Desktop is active, but this
 // lower interval ensures user interactions like switching repositories and
@@ -465,6 +483,7 @@ const commitMessageGenerationButtonClickedKey =
 
 export const showChangesFilterKey = 'show-changes-filter'
 export const showChangesFilterDefault = true
+const detectRenamesInStatusDefault = false
 
 export class AppStore extends TypedBaseStore<IAppState> {
   private readonly gitStoreCache: GitStoreCache
@@ -543,6 +562,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   private confirmUndoCommit: boolean = confirmUndoCommitDefault
   private confirmCommitFilteredChanges: boolean =
     confirmCommitFilteredChangesDefault
+  private emptyStashBehavior: EmptyStashBehavior = emptyStashBehaviorDefault
   private imageDiffType: ImageDiffType = imageDiffTypeDefault
   private hideWhitespaceInChangesDiff: boolean =
     hideWhitespaceInChangesDiffDefault
@@ -553,6 +573,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
   /** Whether or not the spellchecker is enabled for commit summary and description */
   private commitSpellcheckEnabled: boolean = commitSpellcheckEnabledDefault
   private showSideBySideDiff: boolean = ShowSideBySideDiffDefault
+  private detectRenamesInStatus: boolean = detectRenamesInStatusDefault
 
   private uncommittedChangesStrategy = defaultUncommittedChangesStrategy
 
@@ -1073,6 +1094,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
         this.confirmDiscardChangesPermanently,
       askForConfirmationOnDiscardStash: this.confirmDiscardStash,
       askForConfirmationOnCheckoutCommit: this.confirmCheckoutCommit,
+      emptyStashBehavior: this.emptyStashBehavior,
       askForConfirmationOnForcePush: this.askForConfirmationOnForcePush,
       askForConfirmationOnUndoCommit: this.confirmUndoCommit,
       askForConfirmationOnCommitFilteredChanges:
@@ -1084,6 +1106,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       hideWhitespaceInHistoryDiff: this.hideWhitespaceInHistoryDiff,
       hideWhitespaceInPullRequestDiff: this.hideWhitespaceInPullRequestDiff,
       showSideBySideDiff: this.showSideBySideDiff,
+      detectRenamesInStatus: this.detectRenamesInStatus,
       selectedShell: this.selectedShell,
       repositoryFilterText: this.repositoryFilterText,
       resolvedExternalEditor: this.resolvedExternalEditor,
@@ -1187,20 +1210,33 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.repositoryStateCache.updateChangesState(repository, state => {
       const stashEntry = gitStore.currentBranchSelectedStashEntry
       const stashEntries = gitStore.allStashEntries
+      const nextStashEntry =
+        stashEntry === null &&
+        state.selection.kind === ChangesSelectionKind.Stash &&
+        state.stashEntry !== null &&
+        stashEntries.length > 0
+          ? state.stashEntry
+          : stashEntry
 
       // Figure out what selection changes we need to make as a result of this
       // change.
       if (state.selection.kind === ChangesSelectionKind.Stash) {
-        if (state.stashEntry !== null) {
-          if (stashEntry === null) {
-            // We're showing a stash now and the stash entry has just disappeared
-            // so we need to switch back over to the working directory.
-            selectWorkingDirectory = true
-          } else if (state.stashEntry.stashSha !== stashEntry.stashSha) {
-            // The current stash entry has changed from underneath so we must
-            // ensure we have a valid selection.
+        if (stashEntry === null) {
+          // If we had a stash selected before, keep the stash view during
+          // transient reloads and reselect.
+          if (state.stashEntry !== null || stashEntries.length > 0) {
             selectStashEntry = true
+          } else {
+            // No stashes remain; switch back to working directory.
+            selectWorkingDirectory = true
           }
+        } else if (
+          state.stashEntry === null ||
+          state.stashEntry.stashSha !== stashEntry.stashSha
+        ) {
+          // The current stash entry has changed from underneath so we must
+          // ensure we have a valid selection.
+          selectStashEntry = true
         }
       }
 
@@ -1208,7 +1244,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
         commitMessage: gitStore.commitMessage,
         showCoAuthoredBy: gitStore.showCoAuthoredBy,
         coAuthors: gitStore.coAuthors,
-        stashEntry,
+        stashEntry: nextStashEntry,
+        selectedStashEntrySha: state.selectedStashEntrySha,
         stashEntries,
       }
     })
@@ -2240,6 +2277,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
       confirmDiscardStashDefault
     )
 
+    this.emptyStashBehavior =
+      getEnum(emptyStashBehaviorKey, EmptyStashBehavior) ??
+      emptyStashBehaviorDefault
+
     this.confirmCheckoutCommit = getBoolean(
       confirmCheckoutCommitKey,
       confirmCheckoutCommitDefault
@@ -2290,6 +2331,10 @@ export class AppStore extends TypedBaseStore<IAppState> {
     this.hideWhitespaceInPullRequestDiff = getBoolean(
       hideWhitespaceInPullRequestDiffKey,
       false
+    )
+    this.detectRenamesInStatus = getBoolean(
+      detectRenamesInStatusKey,
+      detectRenamesInStatusDefault
     )
     this.commitSpellcheckEnabled = getBoolean(
       commitSpellcheckEnabledKey,
@@ -2634,7 +2679,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     clearPartialState: boolean = false
   ): Promise<IStatusResult | null> {
     const gitStore = this.gitStoreCache.get(repository)
-    const status = await gitStore.loadStatus()
+    const status = await gitStore.loadStatus(this.detectRenamesInStatus)
 
     if (status === null) {
       return null
@@ -3046,11 +3091,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
     // We only render diffs when a single file is selected.
     if (selectedFileIDsBeforeLoad.length !== 1) {
-      if (selectionBeforeLoad.diff !== null) {
+      if (
+        selectionBeforeLoad.diff !== null ||
+        selectionBeforeLoad.stashedFileDiff !== null
+      ) {
         this.repositoryStateCache.updateChangesState(repository, () => ({
           selection: {
             ...selectionBeforeLoad,
             diff: null,
+            stashedFile: null,
+            stashedFileDiff: null,
           },
         }))
         this.emitUpdate()
@@ -3073,6 +3123,14 @@ export class AppStore extends TypedBaseStore<IAppState> {
       selectedFileBeforeLoad,
       this.hideWhitespaceInChangesDiff
     )
+
+    const stashEntryBeforeLoad = changesStateBeforeLoad.stashEntry
+    const stashedFileBeforeLoad =
+      stashEntryBeforeLoad?.files.kind === StashedChangesLoadStates.Loaded
+        ? stashEntryBeforeLoad.files.files.find(
+            f => f.path === selectedFileBeforeLoad.path
+          ) ?? null
+        : null
 
     const stateAfterLoad = this.repositoryStateCache.get(repository)
     const changesState = stateAfterLoad.changesState
@@ -3127,9 +3185,46 @@ export class AppStore extends TypedBaseStore<IAppState> {
     )
     const workingDirectory = WorkingDirectoryStatus.fromFiles(updatedFiles)
 
+    let stashedFile: CommittedFileChange | null = null
+    let stashedFileDiff: IDiff | null = null
+
+    if (stashedFileBeforeLoad !== null) {
+      const stashEntryAfterLoad = changesState.stashEntry
+      const sameStashEntry =
+        stashEntryAfterLoad !== null &&
+        stashEntryBeforeLoad !== null &&
+        stashEntryAfterLoad.stashSha === stashEntryBeforeLoad.stashSha
+
+      if (sameStashEntry) {
+        stashedFile = stashedFileBeforeLoad
+        stashedFileDiff = await getCommitDiff(
+          repository,
+          stashedFileBeforeLoad,
+          stashedFileBeforeLoad.commitish,
+          this.hideWhitespaceInChangesDiff
+        )
+
+        const stateAfterStashDiff = this.repositoryStateCache.get(repository)
+        const changesAfterStashDiff = stateAfterStashDiff.changesState
+
+        if (
+          changesAfterStashDiff.selection.kind !==
+            ChangesSelectionKind.WorkingDirectory ||
+          !arrayEquals(
+            changesAfterStashDiff.selection.selectedFileIDs,
+            selectedFileIDsBeforeLoad
+          )
+        ) {
+          return
+        }
+      }
+    }
+
     const selection: ChangesWorkingDirectorySelection = {
       ...changesState.selection,
       diff,
+      stashedFile,
+      stashedFileDiff,
     }
 
     this.repositoryStateCache.updateChangesState(repository, () => ({
@@ -3158,6 +3253,8 @@ export class AppStore extends TypedBaseStore<IAppState> {
           kind: ChangesSelectionKind.WorkingDirectory,
           diff: null,
           selectedFileIDs: selectedFileIds,
+          stashedFile: null,
+          stashedFileDiff: null,
         },
       }
     })
@@ -3696,7 +3793,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
     }
 
     const gitStore = this.gitStoreCache.get(repository)
-    const status = await gitStore.loadStatus()
+    const status = await gitStore.loadStatus(this.detectRenamesInStatus)
     if (status === null) {
       lookup.delete(repository.id)
       return
@@ -4164,7 +4261,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
       }
 
       await this.checkoutIgnoringChanges(repository, branch, currentRemote)
-      await popStashEntry(repository, stash.stashSha)
+      await this.applyStashEntryHandlingUntrackedConflicts(
+        repository,
+        stash,
+        () => popStashEntry(repository, stash.stashSha)
+      )
 
       this.statsStore.increment('changesTakenToNewBranchCount')
     }
@@ -4328,21 +4429,593 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return false
     }
 
-    if (
-      await this.createStashEntry(
-        repository,
-        currentBranch,
-        stashName,
-        description,
-        discard
-      )
-    ) {
+    const selectedFiles = this.getSelectedWorkingDirectoryFiles(repository)
+
+    if (selectedFiles.length === 0) {
+      return false
+    }
+
+    const createdStash = await this.createStashEntryForFiles(
+      repository,
+      currentBranch,
+      stashName,
+      description,
+      discard,
+      selectedFiles
+    )
+
+    if (createdStash !== null) {
       this.statsStore.increment('stashCreatedOnCurrentBranchCount')
       await this._refreshRepository(repository)
+      await this._selectNewlyCreatedStash(repository, currentBranch)
       return true
     }
 
     return false
+  }
+
+  private async _selectNewlyCreatedStash(
+    repository: Repository,
+    branch: Branch | string
+  ) {
+    const stashEntry = await getLastDesktopStashEntryForBranch(
+      repository,
+      branch
+    )
+
+    if (stashEntry === null) {
+      return
+    }
+
+    this._setSelectedStashEntry(repository, stashEntry.stashSha)
+    await this._selectStashedFile(repository)
+  }
+
+  private getSelectedWorkingDirectoryFiles(repository: Repository) {
+    const { workingDirectory } =
+      this.repositoryStateCache.get(repository).changesState
+
+    return workingDirectory.files.filter(
+      file => file.selection.getSelectionType() !== DiffSelectionType.None
+    )
+  }
+
+  private async getStashFiles(
+    repository: Repository,
+    stashEntry: IStashEntry
+  ): Promise<ReadonlyArray<CommittedFileChange>> {
+    if (stashEntry.files.kind === StashedChangesLoadStates.Loaded) {
+      return stashEntry.files.files
+    }
+
+    return getStashedFiles(repository, stashEntry.stashSha)
+  }
+
+  private isRenamedStatus(
+    status: AppFileStatus
+  ): status is CopiedOrRenamedFileStatus {
+    return status.kind === AppFileStatusKind.Renamed
+  }
+
+  private getRenamedOldPaths(
+    files: ReadonlyArray<{ path: string; status: AppFileStatus }>
+  ): ReadonlyArray<string> {
+    const oldPaths: string[] = []
+
+    for (const file of files) {
+      if (this.isRenamedStatus(file.status)) {
+        oldPaths.push(file.status.oldPath)
+      }
+    }
+
+    return oldPaths
+  }
+
+  private async createStashEntryForFiles(
+    repository: Repository,
+    branch: Branch | string,
+    stashName: string | null,
+    description: string | null,
+    discard: boolean,
+    files: ReadonlyArray<WorkingDirectoryFileChange>
+  ): Promise<IStashEntry | null> {
+    const paths = new Set<string>()
+
+    for (const file of files) {
+      paths.add(file.path)
+
+      if (this.isRenamedStatus(file.status)) {
+        paths.add(file.status.oldPath)
+      }
+    }
+
+    const uniquePaths = Array.from(paths)
+    const includeUntracked = files.some(
+      f =>
+        f.status.kind === AppFileStatusKind.Untracked ||
+        f.status.kind === AppFileStatusKind.Renamed ||
+        f.status.kind === AppFileStatusKind.Copied
+    )
+
+    return createDesktopStashEntryForPaths(
+      repository,
+      branch,
+      stashName,
+      description,
+      discard,
+      uniquePaths,
+      includeUntracked
+    )
+  }
+
+  private async renameWorkingFilesForStashApply(
+    repository: Repository,
+    files: ReadonlyArray<WorkingDirectoryFileChange>,
+    selectedPaths: ReadonlySet<string>
+  ): Promise<ReadonlyArray<IRenamedWorkingFile>> {
+    const renamedFiles: IRenamedWorkingFile[] = []
+
+    for (const file of files) {
+      const originalPath = file.path
+      const absoluteOriginalPath = Path.join(repository.path, originalPath)
+
+      if (!(await pathExists(absoluteOriginalPath))) {
+        continue
+      }
+
+      const workingPath = await this.getUniqueWorkingPath(
+        repository,
+        originalPath
+      )
+
+      await this.moveFileOverwriting(repository, originalPath, workingPath)
+
+      renamedFiles.push({
+        originalPath,
+        workingPath,
+        restoreBeforeStash: selectedPaths.has(originalPath),
+      })
+    }
+
+    return renamedFiles
+  }
+
+  private async restoreRenamedFiles(
+    repository: Repository,
+    renamedFiles: ReadonlyArray<IRenamedWorkingFile>,
+    skipOriginalPaths: ReadonlySet<string> = new Set()
+  ): Promise<void> {
+    for (const file of renamedFiles) {
+      if (skipOriginalPaths.has(file.originalPath)) {
+        continue
+      }
+
+      await this.moveFileOverwriting(
+        repository,
+        file.workingPath,
+        file.originalPath
+      )
+    }
+  }
+
+  private async getUniqueWorkingPath(
+    repository: Repository,
+    relativePath: string
+  ): Promise<string> {
+    let candidate = `${relativePath}.working`
+    let counter = 1
+
+    while (await pathExists(Path.join(repository.path, candidate))) {
+      candidate = `${relativePath}.working-${counter}`
+      counter += 1
+    }
+
+    return candidate
+  }
+
+  private async moveFileOverwriting(
+    repository: Repository,
+    from: string,
+    to: string
+  ): Promise<void> {
+    const fromPath = Path.join(repository.path, from)
+    const toPath = Path.join(repository.path, to)
+
+    if (!(await pathExists(fromPath))) {
+      return
+    }
+
+    if (await pathExists(toPath)) {
+      await Fs.unlink(toPath)
+    }
+
+    await Fs.rename(fromPath, toPath)
+  }
+
+  public async _addFilesToExistingStash(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    stashName: string,
+    description: string,
+    discard: boolean,
+    skipOverwritePrompt: boolean = false
+  ): Promise<boolean> {
+    const gitStore = this.gitStoreCache.get(repository)
+    const { workingDirectory } =
+      this.repositoryStateCache.get(repository).changesState
+
+    const selectedFiles = this.getSelectedWorkingDirectoryFiles(repository)
+
+    if (selectedFiles.length === 0) {
+      return false
+    }
+
+    const stashFiles = await this.getStashFiles(repository, stashEntry)
+    const stashPaths = new Set(stashFiles.map(f => f.path))
+    const selectedPaths = new Set(selectedFiles.map(f => f.path))
+
+    const overlappingSelectedPaths = selectedFiles
+      .filter(file => stashPaths.has(file.path))
+      .map(file => file.path)
+
+    if (!skipOverwritePrompt && overlappingSelectedPaths.length > 0) {
+      this._showPopup({
+        type: PopupType.ConfirmOverwriteStashFiles,
+        repository,
+        stashEntry,
+        filePaths: overlappingSelectedPaths,
+        stashName,
+        description,
+        discard,
+      })
+      return false
+    }
+
+    const conflictsInWorkingDirectory = workingDirectory.files.filter(
+      file =>
+        stashPaths.has(file.path) &&
+        file.status.kind !== AppFileStatusKind.Deleted
+    )
+
+    const renamedFiles = await this.renameWorkingFilesForStashApply(
+      repository,
+      conflictsInWorkingDirectory,
+      selectedPaths
+    )
+
+    let createdStash: IStashEntry | null = null
+
+    try {
+      const applied = await gitStore.performFailableOperation(async () => {
+        await applyStashEntry(repository, stashEntry.stashSha)
+        return true
+      })
+
+      if (applied !== true) {
+        return false
+      }
+
+      await this.restoreRenamedFiles(
+        repository,
+        renamedFiles.filter(f => f.restoreBeforeStash)
+      )
+
+      const combinedPaths = Array.from(
+        new Set([...stashPaths, ...selectedPaths])
+      )
+
+      const includeUntracked =
+        selectedFiles.some(
+          f => f.status.kind === AppFileStatusKind.Untracked
+        ) || stashFiles.some(f => f.status.kind === AppFileStatusKind.New)
+
+      createdStash = await createDesktopStashEntryForPaths(
+        repository,
+        stashEntry.branchName,
+        stashName,
+        description,
+        true,
+        combinedPaths,
+        includeUntracked
+      )
+
+      if (createdStash === null) {
+        return false
+      }
+
+      await gitStore.performFailableOperation(() =>
+        dropDesktopStashEntry(repository, stashEntry.stashSha)
+      )
+
+      if (!discard) {
+        await checkoutPathsAtCommit(
+          repository,
+          createdStash.stashSha,
+          Array.from(selectedPaths)
+        )
+
+        await this.removeWorkingFiles(
+          repository,
+          this.getRenamedOldPaths(selectedFiles)
+        )
+      }
+    } finally {
+      await this.restoreRenamedFiles(
+        repository,
+        renamedFiles.filter(f => !f.restoreBeforeStash)
+      )
+    }
+
+    await this._refreshRepository(repository)
+
+    return createdStash !== null
+  }
+
+  public async _restoreStashFiles(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    files: ReadonlyArray<CommittedFileChange>,
+    discardFromStash: boolean
+  ): Promise<void> {
+    if (files.length === 0) {
+      return
+    }
+
+    const filesToCheckout = files.filter(
+      file => file.status.kind !== AppFileStatusKind.Deleted
+    )
+
+    const pathsToDelete = files
+      .filter(file => file.status.kind === AppFileStatusKind.Deleted)
+      .map(file => file.path)
+
+    const renamedOldPaths = this.getRenamedOldPaths(files)
+    const pathsToDeleteSet = new Set([...pathsToDelete, ...renamedOldPaths])
+
+    if (filesToCheckout.length > 0) {
+      const untrackedCommitish = stashEntry.parents.at(2) ?? null
+      const indexCommitish = stashEntry.parents.at(1) ?? null
+
+      for (const file of filesToCheckout) {
+        const candidates =
+          file.status.kind === AppFileStatusKind.New ||
+          file.status.kind === AppFileStatusKind.Untracked
+            ? [untrackedCommitish, stashEntry.stashSha, indexCommitish]
+            : [stashEntry.stashSha, indexCommitish, untrackedCommitish]
+
+        await this.checkoutPathWithFallback(
+          repository,
+          file.path,
+          candidates.filter((c): c is string => c !== null)
+        )
+      }
+    }
+
+    await this.removeWorkingFiles(repository, Array.from(pathsToDeleteSet))
+
+    if (discardFromStash) {
+      const rebuiltStash = await this.rebuildStashExcludingPaths(
+        repository,
+        stashEntry,
+        new Set(files.map(file => file.path)),
+        true
+      )
+
+      if (rebuiltStash !== null) {
+        this._setSelectedStashEntry(repository, rebuiltStash.stashSha)
+        await this._selectStashedFile(repository)
+      }
+    }
+
+    await this._refreshRepository(repository)
+  }
+
+  private async checkoutPathWithFallback(
+    repository: Repository,
+    path: string,
+    commitishes: ReadonlyArray<string>
+  ): Promise<void> {
+    let lastError: unknown = null
+
+    for (const commitish of commitishes) {
+      try {
+        await checkoutPathsAtCommit(repository, commitish, [path])
+        return
+      } catch (e) {
+        lastError = e
+
+        if (!this.isMissingPathspecError(e)) {
+          throw e
+        }
+      }
+    }
+
+    if (lastError !== null) {
+      throw lastError
+    }
+  }
+
+  private isMissingPathspecError(error: unknown): boolean {
+    if (!(error instanceof GitError)) {
+      return false
+    }
+
+    const stderr = error.result.stderr ?? ''
+    return /pathspec|does not exist in/.test(String(stderr))
+  }
+
+  public async _discardStashFiles(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    files: ReadonlyArray<CommittedFileChange>
+  ): Promise<void> {
+    if (files.length === 0) {
+      return
+    }
+
+    const rebuiltStash = await this.rebuildStashExcludingPaths(
+      repository,
+      stashEntry,
+      new Set(files.map(file => file.path)),
+      false
+    )
+
+    if (rebuiltStash !== null) {
+      this._setSelectedStashEntry(repository, rebuiltStash.stashSha)
+      await this._selectStashedFile(repository)
+    }
+
+    await this._refreshRepository(repository)
+  }
+
+  private async rebuildStashExcludingPaths(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    excludePaths: ReadonlySet<string>,
+    keepExcludedInWorkingDirectory: boolean
+  ): Promise<IStashEntry | null> {
+    const gitStore = this.gitStoreCache.get(repository)
+    const stashFiles = await this.getStashFiles(repository, stashEntry)
+    const stashPaths = new Set(stashFiles.map(file => file.path))
+    const remainingPaths = Array.from(stashPaths).filter(
+      path => !excludePaths.has(path)
+    )
+    const excludedFiles = stashFiles.filter(file => excludePaths.has(file.path))
+
+    if (remainingPaths.length === 0) {
+      if (this.emptyStashBehavior === EmptyStashBehavior.Ask) {
+        this._showPopup({
+          type: PopupType.ConfirmEmptyStash,
+          repository,
+          stash: stashEntry,
+        })
+        return null
+      }
+
+      if (this.emptyStashBehavior === EmptyStashBehavior.Drop) {
+        await gitStore.performFailableOperation(() =>
+          dropDesktopStashEntry(repository, stashEntry.stashSha)
+        )
+      }
+
+      return null
+    }
+
+    const { workingDirectory } =
+      this.repositoryStateCache.get(repository).changesState
+    const conflictsInWorkingDirectory = workingDirectory.files.filter(
+      file =>
+        stashPaths.has(file.path) &&
+        file.status.kind !== AppFileStatusKind.Deleted
+    )
+
+    const renamedFiles = await this.renameWorkingFilesForStashApply(
+      repository,
+      conflictsInWorkingDirectory,
+      new Set()
+    )
+
+    try {
+      const applied = await gitStore.performFailableOperation(async () => {
+        await applyStashEntry(repository, stashEntry.stashSha)
+        return true
+      })
+
+      if (applied !== true) {
+        return null
+      }
+
+      if (!keepExcludedInWorkingDirectory) {
+        const pathsToCheckout = new Set<string>()
+        const pathsToRemove = new Set<string>()
+
+        for (const file of excludedFiles) {
+          switch (file.status.kind) {
+            case AppFileStatusKind.New:
+            case AppFileStatusKind.Untracked:
+            case AppFileStatusKind.Copied:
+              pathsToRemove.add(file.path)
+              break
+            case AppFileStatusKind.Renamed:
+              if (this.isRenamedStatus(file.status)) {
+                pathsToCheckout.add(file.status.oldPath)
+              }
+              pathsToRemove.add(file.path)
+              break
+            case AppFileStatusKind.Deleted:
+            case AppFileStatusKind.Modified:
+            case AppFileStatusKind.Conflicted:
+            default:
+              pathsToCheckout.add(file.path)
+              break
+          }
+        }
+
+        if (pathsToCheckout.size > 0) {
+          await checkoutPaths(repository, Array.from(pathsToCheckout))
+        }
+
+        if (pathsToRemove.size > 0) {
+          await this.removeWorkingFiles(repository, Array.from(pathsToRemove))
+        }
+      }
+
+      if (remainingPaths.length === 0) {
+        if (this.emptyStashBehavior === EmptyStashBehavior.Drop) {
+          await gitStore.performFailableOperation(() =>
+            dropDesktopStashEntry(repository, stashEntry.stashSha)
+          )
+        } else if (this.emptyStashBehavior === EmptyStashBehavior.Ask) {
+          this._showPopup({
+            type: PopupType.ConfirmEmptyStash,
+            repository,
+            stash: stashEntry,
+          })
+        }
+        return null
+      }
+
+      const includeUntracked = stashFiles.some(
+        file => file.status.kind === AppFileStatusKind.New
+      )
+
+      const createdStash = await createDesktopStashEntryForPaths(
+        repository,
+        stashEntry.branchName,
+        stashEntry.userfriendlyName,
+        stashEntry.description,
+        true,
+        remainingPaths,
+        includeUntracked
+      )
+
+      if (createdStash !== null) {
+        await gitStore.performFailableOperation(() =>
+          dropDesktopStashEntry(repository, stashEntry.stashSha)
+        )
+        return createdStash
+      }
+    } finally {
+      await this.restoreRenamedFiles(
+        repository,
+        renamedFiles,
+        keepExcludedInWorkingDirectory ? excludePaths : new Set()
+      )
+    }
+
+    return null
+  }
+
+  private async removeWorkingFiles(
+    repository: Repository,
+    paths: ReadonlyArray<string>
+  ): Promise<void> {
+    for (const path of paths) {
+      const fullPath = Path.join(repository.path, path)
+      if (await pathExists(fullPath)) {
+        await Fs.unlink(fullPath)
+      }
+    }
   }
 
   /**
@@ -6016,6 +6689,16 @@ export class AppStore extends TypedBaseStore<IAppState> {
     return Promise.resolve()
   }
 
+  public _setEmptyStashBehaviorSetting(
+    value: EmptyStashBehavior
+  ): Promise<void> {
+    this.emptyStashBehavior = value
+    localStorage.setItem(emptyStashBehaviorKey, value)
+    this.emitUpdate()
+
+    return Promise.resolve()
+  }
+
   public _setConfirmCheckoutCommitSetting(value: boolean): Promise<void> {
     this.confirmCheckoutCommit = value
 
@@ -6138,6 +6821,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
       setShowSideBySideDiff(showSideBySideDiff)
       this.showSideBySideDiff = showSideBySideDiff
       this.statsStore.increment('diffModeChangeCount')
+      this.emitUpdate()
+    }
+  }
+
+  public _setDetectRenamesInStatus(detectRenamesInStatus: boolean) {
+    if (detectRenamesInStatus !== this.detectRenamesInStatus) {
+      setBoolean(detectRenamesInStatusKey, detectRenamesInStatus)
+      this.detectRenamesInStatus = detectRenamesInStatus
+
+      const repository = this.selectedRepository
+      if (repository instanceof Repository) {
+        this.refreshChangesSection(repository, {
+          includingStatus: true,
+          clearPartialState: false,
+        })
+      }
+
       this.emitUpdate()
     }
   }
@@ -7107,7 +7807,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   private async createStashEntry(
     repository: Repository,
-    branch: Branch,
+    branch: Branch | string,
     stashName: string | null,
     description: string | null,
     discard: boolean
@@ -7128,7 +7828,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
 
   /** This shouldn't be called directly. See `Dispatcher`. */
   public async _popStashEntry(repository: Repository, stashEntry: IStashEntry) {
-    await popStashEntry(repository, stashEntry.stashSha)
+    await this.applyStashEntryHandlingUntrackedConflicts(
+      repository,
+      stashEntry,
+      () => popStashEntry(repository, stashEntry.stashSha)
+    )
     log.info(
       `[AppStore. _popStashEntry] popped stash with commit id ${stashEntry.stashSha}`
     )
@@ -7142,7 +7846,11 @@ export class AppStore extends TypedBaseStore<IAppState> {
     repository: Repository,
     stashEntry: IStashEntry
   ) {
-    await applyStashEntry(repository, stashEntry.stashSha)
+    await this.applyStashEntryHandlingUntrackedConflicts(
+      repository,
+      stashEntry,
+      () => applyStashEntry(repository, stashEntry.stashSha)
+    )
     log.info(
       `[AppStore. _applyStashEntry] applied stash with commit id ${stashEntry.stashSha}`
     )
@@ -7161,6 +7869,23 @@ export class AppStore extends TypedBaseStore<IAppState> {
       )
       return
     }
+
+    await gitStore.performFailableOperation(() => {
+      return dropDesktopStashEntry(repository, stashEntry.stashSha)
+    })
+    log.info(
+      `[AppStore. _dropStashEntry] dropped stash with commit id ${stashEntry.stashSha}`
+    )
+
+    this.statsStore.increment('stashDiscardCount')
+    await gitStore.loadStashEntries()
+  }
+
+  public async _dropStashEntry(
+    repository: Repository,
+    stashEntry: IStashEntry
+  ) {
+    const gitStore = this.gitStoreCache.get(repository)
 
     await gitStore.performFailableOperation(() => {
       return dropDesktopStashEntry(repository, stashEntry.stashSha)
@@ -7223,7 +7948,80 @@ export class AppStore extends TypedBaseStore<IAppState> {
     // Update value in git store & load files
     gitStore.setCurrentBranchSelectedStashEntry(stashEntry)
 
+    this.repositoryStateCache.updateChangesState(repository, state => ({
+      selectedStashEntrySha: stashEntrySha,
+    }))
+    this.emitUpdate()
+
     // TODO: Local storage cleaner after removing a repository or branch
+  }
+
+  public _clearSelectedStashEntry(repository: Repository) {
+    const gitStore = this.gitStoreCache.get(repository)
+
+    gitStore.setCurrentBranchSelectedStashEntry(null)
+
+    const lastSelectedStashEntry =
+      getObject<Record<string, string>>(lastSelectedStashEntryKey) || {}
+    delete lastSelectedStashEntry[repository.id]
+    setObject(lastSelectedStashEntryKey, lastSelectedStashEntry)
+
+    this.repositoryStateCache.updateChangesState(repository, state => ({
+      selectedStashEntrySha: null,
+    }))
+
+    this.emitUpdate()
+  }
+
+  private async applyStashEntryHandlingUntrackedConflicts(
+    repository: Repository,
+    stashEntry: IStashEntry,
+    apply: () => Promise<void>
+  ): Promise<void> {
+    const { workingDirectory } =
+      this.repositoryStateCache.get(repository).changesState
+
+    const stashFiles = await this.getStashFiles(repository, stashEntry)
+    const untrackedPathsInStash = new Set(
+      stashFiles
+        .filter(file => file.status.kind === AppFileStatusKind.New)
+        .map(file => file.path)
+    )
+
+    if (untrackedPathsInStash.size === 0) {
+      await apply()
+      return
+    }
+
+    const untrackedConflicts = workingDirectory.files.filter(
+      file =>
+        file.status.kind === AppFileStatusKind.Untracked &&
+        untrackedPathsInStash.has(file.path)
+    )
+
+    if (untrackedConflicts.length === 0) {
+      await apply()
+      return
+    }
+
+    const renamedFiles = await this.renameWorkingFilesForStashApply(
+      repository,
+      untrackedConflicts,
+      new Set()
+    )
+
+    let applied = false
+
+    try {
+      await apply()
+      applied = true
+    } finally {
+      await this.restoreRenamedFiles(
+        repository,
+        renamedFiles,
+        applied ? untrackedPathsInStash : new Set()
+      )
+    }
   }
 
   public async _testPruneBranches() {
@@ -7489,7 +8287,7 @@ export class AppStore extends TypedBaseStore<IAppState> {
       return
     }
 
-    const status = await gitStore.loadStatus()
+    const status = await gitStore.loadStatus(this.detectRenamesInStatus)
     return status?.currentBranch
   }
 

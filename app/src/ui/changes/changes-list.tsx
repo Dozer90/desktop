@@ -208,6 +208,7 @@ interface IChangesListProps {
 
   readonly stashEntry: IStashEntry | null
   readonly stashEntries: ReadonlyArray<IStashEntry>
+  readonly selectedStashEntrySha: string | null
 
   /**
    * Whether we should show the onboarding tutorial nudge
@@ -253,10 +254,16 @@ export class ChangesList extends React.Component<
 
   public constructor(props: IChangesListProps) {
     super(props)
+    const selectedStashForViewing =
+      props.selectedStashEntrySha === null
+        ? null
+        : props.stashEntries.find(
+            s => s.stashSha === props.selectedStashEntrySha
+          ) ?? null
     this.state = {
       selectedRows: getSelectedRowsFromProps(props),
       focusedRow: null,
-      selectedStashForViewing: null,
+      selectedStashForViewing,
     }
   }
 
@@ -271,6 +278,19 @@ export class ChangesList extends React.Component<
       )
     ) {
       this.setState({ selectedRows: getSelectedRowsFromProps(nextProps) })
+    }
+
+    if (
+      nextProps.selectedStashEntrySha !== this.props.selectedStashEntrySha ||
+      nextProps.stashEntries !== this.props.stashEntries
+    ) {
+      const selectedStashForViewing =
+        nextProps.selectedStashEntrySha === null
+          ? null
+          : nextProps.stashEntries.find(
+              s => s.stashSha === nextProps.selectedStashEntrySha
+            ) ?? null
+      this.setState({ selectedStashForViewing })
     }
   }
 
@@ -331,10 +351,13 @@ export class ChangesList extends React.Component<
     let inSelectedStash = false
     if (
       this.state.selectedStashForViewing !== null &&
-      this.state.selectedStashForViewing.files.kind === StashedChangesLoadStates.Loaded
+      this.state.selectedStashForViewing.files.kind ===
+        StashedChangesLoadStates.Loaded
     ) {
       const stashFiles = this.state.selectedStashForViewing.files.files
-      inSelectedStash = stashFiles.some(stashFile => stashFile.path === file.path)
+      inSelectedStash = stashFiles.some(
+        stashFile => stashFile.path === file.path
+      )
     }
 
     return (
@@ -902,7 +925,9 @@ export class ChangesList extends React.Component<
         this.props.repository,
         stash.stashSha
       )
+      this.props.dispatcher.selectStashedFile(this.props.repository)
     } else {
+      this.props.dispatcher.clearSelectedStashEntry(this.props.repository)
       this.props.dispatcher.hideStashedChanges(this.props.repository)
     }
   }
@@ -923,6 +948,7 @@ export class ChangesList extends React.Component<
         dispatcher={this.props.dispatcher}
         isStashing={this.props.isCommittingOrStashing}
         stashEntries={this.props.stashEntries}
+        selectedStashEntrySha={this.props.selectedStashEntrySha}
         onSelectedStashChanged={this.onSelectedStashChanged}
         anyFilesSelected={anyFilesSelected}
       />

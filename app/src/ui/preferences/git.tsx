@@ -5,6 +5,7 @@ import { Ref } from '../lib/ref'
 import { LinkButton } from '../lib/link-button'
 import { Account } from '../../models/account'
 import { GitConfigUserForm } from '../lib/git-config-user-form'
+import { Checkbox, CheckboxValue } from '../lib/checkbox'
 
 interface IGitProps {
   readonly name: string
@@ -19,6 +20,9 @@ interface IGitProps {
   readonly onDefaultBranchChanged: (defaultBranch: string) => void
 
   readonly onEditGlobalGitConfig: () => void
+
+  readonly detectRenamesInStatus: boolean
+  readonly onDetectRenamesInStatusChanged: (value: boolean) => void
 }
 
 export class Git extends React.Component<IGitProps> {
@@ -27,6 +31,7 @@ export class Git extends React.Component<IGitProps> {
       <DialogContent>
         {this.renderGitConfigAuthorInfo()}
         {this.renderDefaultBranchSetting()}
+        {this.renderRenameDetectionSetting()}
       </DialogContent>
     )
   }
@@ -71,6 +76,35 @@ export class Git extends React.Component<IGitProps> {
             edit your global Git config file
           </LinkButton>
           .
+        </p>
+      </div>
+    )
+  }
+
+  private renderRenameDetectionSetting() {
+    return (
+      <div className="git-rename-detection-setting">
+        <h2 id="rename-detection-heading">Working directory status</h2>
+        <Checkbox
+          value={
+            this.props.detectRenamesInStatus
+              ? CheckboxValue.On
+              : CheckboxValue.Off
+          }
+          onChange={event =>
+            this.props.onDetectRenamesInStatusChanged(
+              event.currentTarget.checked
+            )
+          }
+          label="Detect renames (slower on large repos)"
+          ariaDescribedBy="rename-detection-description"
+        />
+        <p
+          id="rename-detection-description"
+          className="git-settings-description"
+        >
+          Enables rename detection in working directory status. This can be
+          slower on large repositories.
         </p>
       </div>
     )

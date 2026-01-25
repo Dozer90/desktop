@@ -109,7 +109,9 @@ import { getCurrentBranchForcePushState } from '../lib/rebase'
 import { Banner, BannerType } from '../models/banner'
 import { StashAndSwitchBranch } from './stash-changes/stash-and-switch-branch-dialog'
 import { OverwriteStash } from './stash-changes/overwrite-stashed-changes-dialog'
+import { ConfirmOverwriteStashFilesDialog } from './stashing/confirm-overwrite-stash-files-dialog'
 import { ConfirmDiscardStashDialog } from './stashing/confirm-discard-stash'
+import { ConfirmEmptyStashDialog } from './stashing/confirm-empty-stash-dialog'
 import { ConfirmCheckoutCommitDialog } from './checkout/confirm-checkout-commit'
 import { CreateTutorialRepositoryDialog } from './no-repositories/create-tutorial-repository-dialog'
 import { ConfirmExitTutorial } from './tutorial'
@@ -1605,6 +1607,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             confirmCheckoutCommit={
               this.state.askForConfirmationOnCheckoutCommit
             }
+            emptyStashBehavior={this.state.emptyStashBehavior}
             confirmForcePush={this.state.askForConfirmationOnForcePush}
             confirmUndoCommit={this.state.askForConfirmationOnUndoCommit}
             askForConfirmationOnCommitFilteredChanges={
@@ -1630,6 +1633,7 @@ export class App extends React.Component<IAppProps, IAppState> {
             onEditGlobalGitConfig={this.editGlobalGitConfig}
             underlineLinks={this.state.underlineLinks}
             showDiffCheckMarks={this.state.showDiffCheckMarks}
+            detectRenamesInStatus={this.state.detectRenamesInStatus}
           />
         )
       case PopupType.RepositorySettings: {
@@ -1991,6 +1995,30 @@ export class App extends React.Component<IAppProps, IAppState> {
           />
         )
       }
+      case PopupType.ConfirmOverwriteStashFiles: {
+        const {
+          repository,
+          stashEntry,
+          filePaths,
+          stashName,
+          description,
+          discard,
+        } = popup
+
+        return (
+          <ConfirmOverwriteStashFilesDialog
+            key="confirm-overwrite-stash-files"
+            dispatcher={this.props.dispatcher}
+            repository={repository}
+            stashEntry={stashEntry}
+            filePaths={filePaths}
+            stashName={stashName}
+            description={description}
+            discard={discard}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
       case PopupType.ConfirmDiscardStash: {
         const { repository } = popup
 
@@ -2002,6 +2030,19 @@ export class App extends React.Component<IAppProps, IAppState> {
               this.state.askForConfirmationOnDiscardStash
             }
             repository={repository}
+            onDismissed={onPopupDismissedFn}
+          />
+        )
+      }
+      case PopupType.ConfirmEmptyStash: {
+        const { repository, stash } = popup
+
+        return (
+          <ConfirmEmptyStashDialog
+            key="confirm-empty-stash-dialog"
+            dispatcher={this.props.dispatcher}
+            repository={repository}
+            stashEntry={stash}
             onDismissed={onPopupDismissedFn}
           />
         )

@@ -71,6 +71,12 @@ export type PossibleSelections =
     }
   | { type: SelectionType.MissingRepository; repository: Repository }
 
+export enum EmptyStashBehavior {
+  Ask = 'ask',
+  Drop = 'drop',
+  Keep = 'keep',
+}
+
 /** All of the shared app state. */
 export interface IAppState {
   readonly accounts: ReadonlyArray<Account>
@@ -227,6 +233,9 @@ export interface IAppState {
   /** Should the app prompt the user to confirm a commit checkout? */
   readonly askForConfirmationOnCheckoutCommit: boolean
 
+  /** How the app should behave when a stash becomes empty */
+  readonly emptyStashBehavior: EmptyStashBehavior
+
   /** Should the app prompt the user to confirm a force push? */
   readonly askForConfirmationOnForcePush: boolean
 
@@ -274,6 +283,9 @@ export interface IAppState {
 
   /** Whether we should show side by side diffs */
   readonly showSideBySideDiff: boolean
+
+  /** Whether we should detect renames in working directory status */
+  readonly detectRenamesInStatus: boolean
 
   /** The user's preferred shell. */
   readonly selectedShell: Shell
@@ -711,6 +723,12 @@ export type ChangesWorkingDirectorySelection = {
    */
   readonly selectedFileIDs: ReadonlyArray<string>
   readonly diff: IDiff | null
+
+  /** The matching file from the selected stash entry, if present */
+  readonly stashedFile: CommittedFileChange | null
+
+  /** The diff for the matching stashed file, if present */
+  readonly stashedFileDiff: IDiff | null
 }
 
 export type ChangesStashSelection = {
@@ -760,6 +778,9 @@ export interface IChangesState {
    * if no stash exists for the current branch.
    */
   readonly stashEntry: IStashEntry | null
+
+  /** The stash entry explicitly selected by the user in the Stash tab. */
+  readonly selectedStashEntrySha: string | null
 
   /**
    * All stash entries for the current branch.

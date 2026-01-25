@@ -1105,9 +1105,11 @@ export class GitStore extends BaseStore {
     }
   }
 
-  public async loadStatus(): Promise<IStatusResult | null> {
+  public async loadStatus(
+    detectRenamesInStatus: boolean = false
+  ): Promise<IStatusResult | null> {
     const status = await this.performFailableOperation(() =>
-      getStatus(this.repository)
+      getStatus(this.repository, true, false, detectRenamesInStatus)
     )
 
     if (!status) {

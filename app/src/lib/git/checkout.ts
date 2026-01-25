@@ -175,6 +175,23 @@ export async function checkoutPaths(
   )
 }
 
+/** Check out the paths at the given commitish. */
+export async function checkoutPathsAtCommit(
+  repository: Repository,
+  commitish: string,
+  paths: ReadonlyArray<string>
+): Promise<void> {
+  if (paths.length === 0) {
+    return
+  }
+
+  await git(
+    ['checkout', commitish, '--', ...paths],
+    repository.path,
+    'checkoutPathsAtCommit'
+  )
+}
+
 /**
  * Check out either stage #2 (ours) or #3 (theirs) for a conflicted
  * file.

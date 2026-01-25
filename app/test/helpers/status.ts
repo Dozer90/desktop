@@ -6,8 +6,11 @@ import { Repository } from '../../src/models/repository'
  * part we know we'll get a valid input so let's fail the test
  * if we get null, rather than need to handle it everywhere
  */
-export const getStatusOrThrow = async (repository: Repository) => {
-  const inner = await getStatus(repository)
+export const getStatusOrThrow = async (
+  repository: Repository,
+  detectRenames: boolean = true
+) => {
+  const inner = await getStatus(repository, true, false, detectRenames)
   if (inner == null) {
     throw new Error('git status returned null which was not expected')
   }

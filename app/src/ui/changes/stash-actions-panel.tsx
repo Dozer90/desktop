@@ -1,10 +1,14 @@
 import * as React from 'react'
 import { Repository } from '../../models/repository'
 import { Dispatcher } from '../dispatcher'
-import { IStashEntry } from '../../models/stash-entry'
+import { IStashEntry, StashedChangesLoadStates } from '../../models/stash-entry'
 import { CommittedFileChange } from '../../models/status'
+import { PopupType } from '../../models/popup'
 import { Button } from '../lib/button'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
+import { getBoolean, setBoolean } from '../../lib/local-storage'
+
+const discardOnRestoreKey = 'stash-discard-on-restore'
 
 interface IStashActionsPanelProps {
   readonly repository: Repository
@@ -26,8 +30,10 @@ export class StashActionsPanel extends React.Component<
   public constructor(props: IStashActionsPanelProps) {
     super(props)
 
+    const discardOnRestore = getBoolean(discardOnRestoreKey, true)
+
     this.state = {
-      discardOnRestore: true,
+      discardOnRestore,
     }
   }
 
@@ -35,39 +41,53 @@ export class StashActionsPanel extends React.Component<
     event: React.FormEvent<HTMLInputElement>
   ) => {
     const value = event.currentTarget.checked
+    setBoolean(discardOnRestoreKey, value)
     this.setState({ discardOnRestore: value })
   }
 
   private onRestoreClick = () => {
-    const { repository, dispatcher, stashEntry } = this.props
+    const { repository, dispatcher, stashEntry, selectedFiles } = this.props
     const { discardOnRestore } = this.state
 
-    if (discardOnRestore) {
-      // Use popStash - restores and removes from stash list
-      dispatcher.popStash(repository, stashEntry)
-    } else {
-      // Use applyStash - restores but keeps in stash list
-      dispatcher.applyStash(repository, stashEntry)
+    if (selectedFiles.length === 0) {
+      return
     }
+
+    dispatcher.restoreStashFiles(
+      repository,
+      stashEntry,
+      selectedFiles,
+      discardOnRestore
+    )
   }
 
   private onDiscardClick = () => {
-    const { selectedFiles } = this.props
+    const { repository, dispatcher, stashEntry, selectedFiles } = this.props
 
     if (selectedFiles.length === 0) {
       // TODO: Show message that no files are selected
       return
     }
 
-    // TODO: Implement discardFilesFromStash action
-    // For now, just log
-    console.log('Discard files:', selectedFiles.map(f => f.path))
+    dispatcher.discardStashFiles(repository, stashEntry, selectedFiles)
   }
 
   private onDeleteStashClick = () => {
     const { repository, dispatcher } = this.props
+    const hasFiles =
+      this.props.stashEntry.files.kind === StashedChangesLoadStates.Loaded
+        ? this.props.stashEntry.files.files.length > 0
+        : false
 
-    // Delete the entire stash entry
+    if (hasFiles) {
+      dispatcher.showPopup({
+        type: PopupType.ConfirmDiscardStash,
+        stash: this.props.stashEntry,
+        repository,
+      })
+      return
+    }
+
     dispatcher.dropSelectedStash(repository)
   }
 
@@ -75,7 +95,9 @@ export class StashActionsPanel extends React.Component<
     const { selectedFiles, isRestoring, isDiscarding } = this.props
     const { discardOnRestore } = this.state
 
-    const discardButtonDisabled = selectedFiles.length === 0 || isDiscarding
+    const hasSelectedFiles = selectedFiles.length > 0
+    const restoreButtonDisabled = !hasSelectedFiles || isRestoring
+    const discardButtonDisabled = !hasSelectedFiles || isDiscarding
 
     return (
       <div className="stash-actions-panel">
@@ -92,7 +114,7 @@ export class StashActionsPanel extends React.Component<
         <div className="button-group">
           <Button
             onClick={this.onRestoreClick}
-            disabled={isRestoring}
+            disabled={restoreButtonDisabled}
             type="submit"
             className="restore-button"
           >
@@ -107,12 +129,8 @@ export class StashActionsPanel extends React.Component<
             {isDiscarding ? 'Discarding...' : 'Discard'}
           </Button>
 
-          <Button
-            onClick={this.onDeleteStashClick}
-            disabled={isRestoring || isDiscarding}
-            className="delete-button"
-          >
-            Delete Stash
+          <Button onClick={this.onDeleteStashClick} className="drop-button">
+            Drop Stash
           </Button>
         </div>
       </div>

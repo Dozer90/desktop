@@ -24,8 +24,9 @@ import { Account } from '../models/account'
 import { FocusContainer } from './lib/focus-container'
 import { ImageDiffType } from '../models/diff'
 import { IMenu } from '../models/app-menu'
-import { StashDiffViewer } from './stashing'
+import { StashDiffPanel, StashDiffViewer } from './stashing'
 import { StashedChangesLoadStates } from '../models/stash-entry'
+import { CommittedFileChange } from '../models/status'
 import { StashedFilesList } from './changes/stashed-files-list'
 import { StashActionsPanel } from './changes/stash-actions-panel'
 import { TutorialPanel, TutorialWelcome, TutorialDone } from './tutorial'
@@ -37,6 +38,7 @@ import { DragType } from '../models/drag-drop'
 import { PullRequestSuggestedNextAction } from '../models/pull-request'
 import { clamp } from '../lib/clamp'
 import { Emoji } from '../lib/emoji'
+import { arrayEquals } from '../lib/equality'
 
 interface IRepositoryViewProps {
   readonly repository: Repository
@@ -121,6 +123,7 @@ interface IRepositoryViewProps {
 interface IRepositoryViewState {
   readonly changesListScrollTop: number
   readonly compareListScrollTop: number
+  readonly stashIncludedFileIds: ReadonlyArray<string>
 }
 
 const enum Tab {
@@ -151,6 +154,7 @@ export class RepositoryView extends React.Component<
     this.state = {
       changesListScrollTop: 0,
       compareListScrollTop: 0,
+      stashIncludedFileIds: [],
     }
   }
 
@@ -389,23 +393,29 @@ export class RepositoryView extends React.Component<
   }
 
   private handleStashSidebarWidthReset = () => {
-    // TODO: Add dispatcher method for resetting stash sidebar width
-    // this.props.dispatcher.resetStashSidebarWidth()
+    this.props.dispatcher.resetStashedFilesWidth()
   }
 
   private handleStashSidebarResize = (width: number) => {
-    // TODO: Add dispatcher method for setting stash sidebar width
-    // this.props.dispatcher.setStashSidebarWidth(width)
+    this.props.dispatcher.setStashedFilesWidth(width)
   }
 
-  private onStashedFileSelectionChanged = (file: any) => {
-    // Select the stashed file to show its diff
+  private onStashedFileSelectionChanged = (
+    file: CommittedFileChange | null
+  ) => {
+    // Select or clear the stashed file to show its diff
     this.props.dispatcher.selectStashedFile(this.props.repository, file)
   }
 
   private onStashedFileIncludeChanged = (file: any, include: boolean) => {
     // TODO: Handle checkbox state for discard operation
     console.log('Include changed:', file.path, include)
+  }
+
+  private onStashedIncludedFilesChanged = (fileIds: ReadonlyArray<string>) => {
+    if (!arrayEquals(fileIds, this.state.stashIncludedFileIds)) {
+      this.setState({ stashIncludedFileIds: fileIds })
+    }
   }
 
   private renderStashFilesSidebar(): JSX.Element | null {
@@ -422,10 +432,11 @@ export class RepositoryView extends React.Component<
       return null
     }
 
-    const { stashEntry, workingDirectory } = changesState
+    const { stashEntry, workingDirectory, selectedStashEntrySha, selection } =
+      changesState
 
-    // Only show when there's a selected stash
-    if (stashEntry === null) {
+    // Only show when a stash has been explicitly selected
+    if (selectedStashEntrySha === null || stashEntry === null) {
       return null
     }
 
@@ -433,6 +444,19 @@ export class RepositoryView extends React.Component<
     if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
       return null
     }
+
+    const selectedFileIDs =
+      selection.kind === ChangesSelectionKind.Stash &&
+      selection.selectedStashedFile !== null
+        ? [selection.selectedStashedFile.id]
+        : []
+
+    const includedFiles =
+      stashEntry.files.kind === StashedChangesLoadStates.Loaded
+        ? stashEntry.files.files.filter(file =>
+            this.state.stashIncludedFileIds.includes(file.id)
+          )
+        : []
 
     return (
       <Resizable
@@ -443,14 +467,16 @@ export class RepositoryView extends React.Component<
         onReset={this.handleStashSidebarWidthReset}
         onResize={this.handleStashSidebarResize}
         description="Stash files sidebar"
+        handlePosition="left"
       >
         <StashedFilesList
           repository={this.props.repository}
           dispatcher={this.props.dispatcher}
           stashEntry={stashEntry}
-          selectedFileIDs={[]}
+          selectedFileIDs={selectedFileIDs}
           onFileSelectionChanged={this.onStashedFileSelectionChanged}
           onIncludeChanged={this.onStashedFileIncludeChanged}
+          onIncludedFilesChanged={this.onStashedIncludedFilesChanged}
           availableWidth={this.props.stashedFilesWidth.value}
           workingDirectoryFiles={workingDirectory.files}
         />
@@ -458,7 +484,7 @@ export class RepositoryView extends React.Component<
           repository={this.props.repository}
           dispatcher={this.props.dispatcher}
           stashEntry={stashEntry}
-          selectedFiles={[]}
+          selectedFiles={includedFiles}
           isRestoring={false}
           isDiscarding={false}
         />
@@ -467,11 +493,30 @@ export class RepositoryView extends React.Component<
   }
 
   private renderStashedChangesContent(): JSX.Element | null {
-    const { changesState } = this.props.state
+    const { changesState, selectedActionTab } = this.props.state
     const { selection, stashEntry, stashEntries } = changesState
 
     if (selection.kind !== ChangesSelectionKind.Stash || stashEntry === null) {
       return null
+    }
+
+    if (selectedActionTab === ActionSectionTab.Stash) {
+      return (
+        <StashDiffPanel
+          repository={this.props.repository}
+          file={selection.selectedStashedFile}
+          diff={selection.selectedStashedFileDiff}
+          imageDiffType={this.props.imageDiffType}
+          showSideBySideDiff={this.props.showSideBySideDiff}
+          hideWhitespaceInDiff={this.props.hideWhitespaceInChangesDiff}
+          onShowSideBySideDiffChanged={this.onShowSideBySideDiffChanged}
+          onOpenBinaryFile={this.onOpenBinaryFile}
+          onOpenSubmodule={this.onOpenSubmodule}
+          onChangeImageDiffType={this.onChangeImageDiffType}
+          onHideWhitespaceInDiffChanged={this.onHideWhitespaceInDiffChanged}
+          onDiffOptionsOpened={this.onDiffOptionsOpened}
+        />
+      )
     }
 
     if (stashEntry.files.kind === StashedChangesLoadStates.Loaded) {
@@ -593,7 +638,7 @@ export class RepositoryView extends React.Component<
       return this.renderStashedChangesContent()
     }
 
-    const { selectedFileIDs, diff } = selection
+    const { selectedFileIDs, diff, stashedFile, stashedFileDiff } = selection
 
     if (selectedFileIDs.length > 1) {
       return <MultipleSelection count={selectedFileIDs.length} />
@@ -634,6 +679,8 @@ export class RepositoryView extends React.Component<
           dispatcher={this.props.dispatcher}
           file={selectedFile}
           diff={diff}
+          stashedFile={stashedFile}
+          stashedFileDiff={stashedFileDiff}
           isCommittingOrStashing={this.props.state.isCommittingOrStashing}
           imageDiffType={this.props.imageDiffType}
           hideWhitespaceInDiff={this.props.hideWhitespaceInChangesDiff}
@@ -662,6 +709,10 @@ export class RepositoryView extends React.Component<
 
   private onChangeImageDiffType = (imageDiffType: ImageDiffType) => {
     this.props.dispatcher.changeImageDiffType(imageDiffType)
+  }
+
+  private onShowSideBySideDiffChanged = (showSideBySideDiff: boolean) => {
+    this.props.dispatcher.onShowSideBySideDiffChanged(showSideBySideDiff)
   }
 
   private renderContent(): JSX.Element | null {

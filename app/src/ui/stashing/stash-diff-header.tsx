@@ -7,6 +7,9 @@ import { OkCancelButtonGroup } from '../dialog/ok-cancel-button-group'
 import { ErrorWithMetadata } from '../../lib/error-with-metadata'
 import { Select } from '../lib/select'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
+import { getBoolean, setBoolean } from '../../lib/local-storage'
+
+const popOnRestoreKey = 'stash-pop-on-restore'
 
 interface IStashDiffHeaderProps {
   readonly stashEntry: IStashEntry
@@ -34,10 +37,12 @@ export class StashDiffHeader extends React.Component<
   public constructor(props: IStashDiffHeaderProps) {
     super(props)
 
+    const isPopOnRestore = getBoolean(popOnRestoreKey, true)
+
     this.state = {
       isRestoring: false,
       isDiscarding: false,
-      isPopOnRestore: true,
+      isPopOnRestore,
     }
   }
 
@@ -88,6 +93,7 @@ export class StashDiffHeader extends React.Component<
     event: React.FormEvent<HTMLInputElement>
   ) => {
     const isChecked = event.currentTarget.checked
+    setBoolean(popOnRestoreKey, isChecked)
     this.setState({ isPopOnRestore: isChecked })
   }
 

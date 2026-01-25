@@ -19,6 +19,7 @@ interface IStashMessageProps {
   readonly dispatcher: Dispatcher
   readonly isStashing: boolean
   readonly stashEntries: ReadonlyArray<IStashEntry>
+  readonly selectedStashEntrySha: string | null
   readonly onSelectedStashChanged?: (stash: IStashEntry | null) => void
   readonly anyFilesSelected?: boolean
 }
@@ -50,11 +51,17 @@ export class StashMessage extends React.Component<
 
   public constructor(props: IStashMessageProps) {
     super(props)
+    const selectedStash =
+      props.selectedStashEntrySha === null
+        ? null
+        : props.stashEntries.find(
+            s => s.stashSha === props.selectedStashEntrySha
+          ) ?? null
     this.state = {
-      mode: StashMode.New,
-      selectedStash: null,
-      stashName: '',
-      description: '',
+      mode: selectedStash === null ? StashMode.New : StashMode.Existing,
+      selectedStash,
+      stashName: selectedStash?.userfriendlyName || '',
+      description: selectedStash?.description || '',
       discardAfterStash: false,
       showDropdown: false,
       showFilterPopover: false,
@@ -70,6 +77,27 @@ export class StashMessage extends React.Component<
 
   public componentWillUnmount() {
     document.removeEventListener('mousedown', this.handleClickOutside)
+  }
+
+  public componentWillReceiveProps(nextProps: IStashMessageProps) {
+    if (
+      nextProps.selectedStashEntrySha !== this.props.selectedStashEntrySha ||
+      nextProps.stashEntries !== this.props.stashEntries
+    ) {
+      const selectedStash =
+        nextProps.selectedStashEntrySha === null
+          ? null
+          : nextProps.stashEntries.find(
+              s => s.stashSha === nextProps.selectedStashEntrySha
+            ) ?? null
+
+      this.setState({
+        mode: selectedStash === null ? StashMode.New : StashMode.Existing,
+        selectedStash,
+        stashName: selectedStash?.userfriendlyName || '',
+        description: selectedStash?.description || '',
+      })
+    }
   }
 
   private handleClickOutside = (event: MouseEvent) => {
@@ -230,7 +258,19 @@ export class StashMessage extends React.Component<
 
   private onStashClick = async () => {
     const { repository, dispatcher } = this.props
-    const { stashName, description, discardAfterStash } = this.state
+    const { stashName, description, discardAfterStash, selectedStash, mode } =
+      this.state
+
+    if (mode === StashMode.Existing && selectedStash !== null) {
+      dispatcher.addFilesToStashEntry(
+        repository,
+        selectedStash,
+        stashName,
+        description,
+        discardAfterStash
+      )
+      return
+    }
 
     dispatcher.createStashWithMessage(
       repository,
@@ -350,8 +390,7 @@ export class StashMessage extends React.Component<
       this.state
 
     const isNewMode = mode === StashMode.New
-    const stashDisabled =
-      isStashing || (isNewMode && !this.props.anyFilesSelected)
+    const stashDisabled = isStashing || !this.props.anyFilesSelected
 
     // Display the selected stash name in Existing mode, or the user input in New mode
     const displayValue = isNewMode
@@ -426,7 +465,7 @@ export class StashMessage extends React.Component<
             value={discardAfterStash ? CheckboxValue.On : CheckboxValue.Off}
             onChange={this.onDiscardAfterStashChanged}
             label="Discard when stashed"
-            disabled={isStashing || !isNewMode}
+            disabled={isStashing}
           />
         </div>
 
@@ -436,7 +475,7 @@ export class StashMessage extends React.Component<
           disabled={stashDisabled}
           type="submit"
         >
-          {isStashing ? 'Stashing...' : isNewMode ? 'Stash' : 'Restore'}
+          {isStashing ? 'Stashing...' : isNewMode ? 'Stash' : 'Add to stash'}
         </Button>
       </div>
     )

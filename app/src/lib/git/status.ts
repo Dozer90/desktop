@@ -218,8 +218,15 @@ export async function getStatus(
 ): Promise<IStatusResult | null>
 export async function getStatus(
   repository: Repository,
+  includeUntracked: boolean,
+  rejectOnError: boolean,
+  detectRenames: boolean
+): Promise<IStatusResult | null>
+export async function getStatus(
+  repository: Repository,
   includeUntracked = true,
-  rejectOnError = false
+  rejectOnError = false,
+  detectRenames = false
 ): Promise<IStatusResult | null> {
   const args = [
     '--no-optional-locks',
@@ -228,8 +235,11 @@ export async function getStatus(
     '--branch',
     '--porcelain=2',
     '-z',
-    '--find-renames',
   ]
+
+  if (detectRenames) {
+    args.push('--find-renames')
+  }
 
   const { stdout, exitCode } = await git(args, repository.path, 'getStatus', {
     successExitCodes: new Set(rejectOnError ? [0] : [0, 128]),

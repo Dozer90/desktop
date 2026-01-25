@@ -191,6 +191,7 @@ interface IFilterChangesListProps {
   readonly externalEditorLabel?: string
 
   readonly stashEntry: IStashEntry | null
+  readonly selectedStashEntrySha: string | null
   readonly stashEntries: ReadonlyArray<IStashEntry>
 
   /**
@@ -333,7 +334,12 @@ export class FilterChangesList extends React.Component<
       selectedItems: getSelectedItemsFromProps(props),
       focusedRow: null,
       groups,
-      selectedStashForViewing: null,
+      selectedStashForViewing:
+        props.selectedStashEntrySha === null
+          ? null
+          : props.stashEntries.find(
+              s => s.stashSha === props.selectedStashEntrySha
+            ) ?? null,
     }
   }
 
@@ -351,6 +357,19 @@ export class FilterChangesList extends React.Component<
         selectedItems: getSelectedItemsFromProps(nextProps),
         groups: [this.createListItems(nextProps.workingDirectory.files)],
       })
+    }
+
+    if (
+      nextProps.selectedStashEntrySha !== this.props.selectedStashEntrySha ||
+      nextProps.stashEntries !== this.props.stashEntries
+    ) {
+      const selectedStashForViewing =
+        nextProps.selectedStashEntrySha === null
+          ? null
+          : nextProps.stashEntries.find(
+              s => s.stashSha === nextProps.selectedStashEntrySha
+            ) ?? null
+      this.setState({ selectedStashForViewing })
     }
   }
 
@@ -432,10 +451,13 @@ export class FilterChangesList extends React.Component<
     let inSelectedStash = false
     if (
       this.state.selectedStashForViewing !== null &&
-      this.state.selectedStashForViewing.files.kind === StashedChangesLoadStates.Loaded
+      this.state.selectedStashForViewing.files.kind ===
+        StashedChangesLoadStates.Loaded
     ) {
       const stashFiles = this.state.selectedStashForViewing.files.files
-      inSelectedStash = stashFiles.some(stashFile => stashFile.path === file.path)
+      inSelectedStash = stashFiles.some(
+        stashFile => stashFile.path === file.path
+      )
     }
 
     return (
@@ -1046,7 +1068,9 @@ export class FilterChangesList extends React.Component<
         this.props.repository,
         stash.stashSha
       )
+      this.props.dispatcher.selectStashedFile(this.props.repository)
     } else {
+      this.props.dispatcher.clearSelectedStashEntry(this.props.repository)
       this.props.dispatcher.hideStashedChanges(this.props.repository)
     }
   }
@@ -1066,6 +1090,7 @@ export class FilterChangesList extends React.Component<
         dispatcher={this.props.dispatcher}
         isStashing={this.props.isCommittingOrStashing}
         stashEntries={this.props.stashEntries}
+        selectedStashEntrySha={this.props.selectedStashEntrySha}
         onSelectedStashChanged={this.onSelectedStashChanged}
         anyFilesSelected={anyFilesSelected}
       />

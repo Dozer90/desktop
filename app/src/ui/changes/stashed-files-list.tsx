@@ -1,13 +1,30 @@
 import * as React from 'react'
+import * as Path from 'path'
 import { Repository } from '../../models/repository'
 import { Dispatcher } from '../dispatcher'
 import { IStashEntry, StashedChangesLoadStates } from '../../models/stash-entry'
-import { CommittedFileChange, WorkingDirectoryFileChange, AppFileStatusKind } from '../../models/status'
+import {
+  CommittedFileChange,
+  WorkingDirectoryFileChange,
+  AppFileStatusKind,
+} from '../../models/status'
 import { List } from '../lib/list'
 import { StashedFileItem } from './stashed-file-item'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { TextBox } from '../lib/text-box'
 import { StashedFilesFilterOptions } from './stashed-files-filter-options'
+import { arrayEquals } from '../../lib/equality'
+import { IMenuItem, showContextualMenu } from '../../lib/menu-item'
+import {
+  CopyFilePathLabel,
+  CopyRelativeFilePathLabel,
+  DefaultEditorLabel,
+  OpenWithDefaultProgramLabel,
+  isSafeFileExtension,
+} from '../lib/context-menu'
+import { revealInFileManager } from '../../lib/app-shell'
+import { openFile } from '../lib/open-file'
+import { clipboard } from 'electron'
 
 const RowHeight = 29
 
@@ -16,8 +33,12 @@ interface IStashedFilesListProps {
   readonly dispatcher: Dispatcher
   readonly stashEntry: IStashEntry
   readonly selectedFileIDs: ReadonlyArray<string>
-  readonly onFileSelectionChanged: (file: CommittedFileChange) => void
-  readonly onIncludeChanged: (file: CommittedFileChange, include: boolean) => void
+  readonly onFileSelectionChanged: (file: CommittedFileChange | null) => void
+  readonly onIncludeChanged: (
+    file: CommittedFileChange,
+    include: boolean
+  ) => void
+  readonly onIncludedFilesChanged?: (fileIds: ReadonlyArray<string>) => void
   readonly availableWidth: number
   readonly workingDirectoryFiles: ReadonlyArray<WorkingDirectoryFileChange>
 }
@@ -29,6 +50,7 @@ interface IStashedFilesListState {
   readonly filterNewFiles: boolean
   readonly filterModifiedFiles: boolean
   readonly filterDeletedFiles: boolean
+  readonly includedFileIds: ReadonlyArray<string>
 }
 
 export class StashedFilesList extends React.Component<
@@ -38,14 +60,74 @@ export class StashedFilesList extends React.Component<
   public constructor(props: IStashedFilesListProps) {
     super(props)
 
-    this.state = {
-      selectedRows: [],
-      focusedRow: null,
+    const initialIncludedFileIds =
+      props.stashEntry.files.kind === StashedChangesLoadStates.Loaded
+        ? props.stashEntry.files.files.map(file => file.id)
+        : []
+
+    const initialFilterState = {
       filterText: '',
       filterNewFiles: false,
       filterModifiedFiles: false,
       filterDeletedFiles: false,
     }
+
+    this.state = {
+      selectedRows: this.getSelectedRowsFromProps(props, initialFilterState),
+      focusedRow: null,
+      ...initialFilterState,
+      includedFileIds: initialIncludedFileIds,
+    }
+  }
+
+  public componentDidMount() {
+    if (this.state.includedFileIds.length > 0) {
+      this.props.onIncludedFilesChanged?.(this.state.includedFileIds)
+    }
+  }
+
+  public componentDidUpdate(
+    prevProps: IStashedFilesListProps,
+    prevState: IStashedFilesListState
+  ) {
+    if (
+      !arrayEquals(prevProps.selectedFileIDs, this.props.selectedFileIDs) ||
+      prevProps.stashEntry.files !== this.props.stashEntry.files ||
+      prevProps.stashEntry.stashSha !== this.props.stashEntry.stashSha ||
+      prevProps.workingDirectoryFiles !== this.props.workingDirectoryFiles ||
+      prevState.filterText !== this.state.filterText ||
+      prevState.filterNewFiles !== this.state.filterNewFiles ||
+      prevState.filterModifiedFiles !== this.state.filterModifiedFiles ||
+      prevState.filterDeletedFiles !== this.state.filterDeletedFiles
+    ) {
+      const selectedRows = this.getSelectedRowsFromProps(this.props, this.state)
+      if (!arrayEquals(selectedRows, this.state.selectedRows)) {
+        this.setState({ selectedRows })
+      }
+    }
+
+    if (prevProps.stashEntry.stashSha !== this.props.stashEntry.stashSha) {
+      this.resetIncludedFiles()
+    }
+
+    if (
+      prevProps.stashEntry.files.kind !== StashedChangesLoadStates.Loaded &&
+      this.props.stashEntry.files.kind === StashedChangesLoadStates.Loaded
+    ) {
+      this.resetIncludedFiles()
+    }
+  }
+
+  private resetIncludedFiles() {
+    const { stashEntry } = this.props
+    if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
+      return
+    }
+
+    const includedFileIds = stashEntry.files.files.map(file => file.id)
+
+    this.setState({ includedFileIds })
+    this.props.onIncludedFilesChanged?.(includedFileIds)
   }
 
   private onFilterTextChanged = (filterText: string) => {
@@ -83,17 +165,153 @@ export class StashedFilesList extends React.Component<
 
     // Notify parent of file selection
     if (rows.length > 0) {
-      const file = stashEntry.files.files[rows[0]]
+      const file = this.getFilteredFiles()[rows[0]]
       this.props.onFileSelectionChanged(file)
+    } else {
+      this.props.onFileSelectionChanged(null)
     }
   }
 
   private onIncludeChanged = (file: CommittedFileChange, include: boolean) => {
+    const includedFileIds = new Set(this.state.includedFileIds)
+
+    if (include) {
+      includedFileIds.add(file.id)
+    } else {
+      includedFileIds.delete(file.id)
+    }
+
+    const updatedIds = Array.from(includedFileIds)
+
+    this.setState({ includedFileIds: updatedIds })
+    this.props.onIncludedFilesChanged?.(updatedIds)
     this.props.onIncludeChanged(file, include)
   }
 
-  private onFileClick = (file: CommittedFileChange) => {
-    this.props.onFileSelectionChanged(file)
+  private onRowFocus = (row: number) => {
+    this.setState({ focusedRow: row })
+  }
+
+  private onRowBlur = (row: number) => {
+    if (this.state.focusedRow === row) {
+      this.setState({ focusedRow: null })
+    }
+  }
+
+  private setIncludedForFile(file: CommittedFileChange, include: boolean) {
+    const includedFileIds = new Set(this.state.includedFileIds)
+
+    if (include) {
+      includedFileIds.add(file.id)
+    } else {
+      includedFileIds.delete(file.id)
+    }
+
+    const updatedIds = Array.from(includedFileIds)
+    this.setState({ includedFileIds: updatedIds })
+    this.props.onIncludedFilesChanged?.(updatedIds)
+    this.props.onIncludeChanged(file, include)
+  }
+
+  private getIncludedFiles(): ReadonlyArray<CommittedFileChange> {
+    const { stashEntry } = this.props
+    if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
+      return []
+    }
+
+    const includedIds = new Set(this.state.includedFileIds)
+    return stashEntry.files.files.filter(file => includedIds.has(file.id))
+  }
+
+  private getContextMenuItems(
+    file: CommittedFileChange
+  ): ReadonlyArray<IMenuItem> {
+    const fullPath = Path.join(this.props.repository.path, file.path)
+    const enabled = file.status.kind !== AppFileStatusKind.Deleted
+    const extension = Path.extname(file.path)
+    const isSafeExtension = isSafeFileExtension(extension)
+
+    const isIncluded = this.state.includedFileIds.includes(file.id)
+    const includedFiles = this.getIncludedFiles()
+    const actionFiles =
+      isIncluded && includedFiles.length > 0 ? includedFiles : [file]
+
+    const items: IMenuItem[] = [
+      {
+        label: __DARWIN__ ? 'Restore' : 'Restore',
+        action: () =>
+          this.props.dispatcher.restoreStashFiles(
+            this.props.repository,
+            this.props.stashEntry,
+            actionFiles,
+            false
+          ),
+        enabled: actionFiles.length > 0,
+      },
+      {
+        label: __DARWIN__ ? 'Discard' : 'Discard',
+        action: () =>
+          this.props.dispatcher.discardStashFiles(
+            this.props.repository,
+            this.props.stashEntry,
+            actionFiles
+          ),
+        enabled: actionFiles.length > 0,
+      },
+      { type: 'separator' },
+      {
+        label: __DARWIN__ ? 'Select' : 'Select',
+        action: () => this.setIncludedForFile(file, true),
+        enabled: !isIncluded,
+      },
+      {
+        label: __DARWIN__ ? 'Deselect' : 'Deselect',
+        action: () => this.setIncludedForFile(file, false),
+        enabled: isIncluded,
+      },
+      { type: 'separator' },
+      {
+        label: CopyFilePathLabel,
+        action: () => clipboard.writeText(fullPath),
+      },
+      {
+        label: CopyRelativeFilePathLabel,
+        action: () => clipboard.writeText(Path.normalize(file.path)),
+      },
+      { type: 'separator' },
+      {
+        label: __DARWIN__ ? 'Reveal in Finder' : 'Reveal in File Manager',
+        action: () => revealInFileManager(this.props.repository, file.path),
+        enabled,
+      },
+      {
+        label: DefaultEditorLabel,
+        action: () => this.props.dispatcher.openInExternalEditor(fullPath),
+        enabled,
+      },
+      {
+        label: OpenWithDefaultProgramLabel,
+        action: () => openFile(fullPath, this.props.dispatcher),
+        enabled: enabled && isSafeExtension,
+      },
+    ]
+
+    return items
+  }
+
+  private onItemContextMenu = (
+    row: number,
+    event: React.MouseEvent<HTMLDivElement>
+  ) => {
+    event.preventDefault()
+
+    const file = this.getFilteredFiles()[row]
+    if (!file) {
+      return
+    }
+
+    const items = this.getContextMenuItems(file)
+    showContextualMenu(items)
   }
 
   private renderRow = (row: number): JSX.Element => {
@@ -111,9 +329,8 @@ export class StashedFilesList extends React.Component<
       wf => wf.path === file.path
     )
 
-    // For stashed files, we use a simple included/excluded state
-    // All files are initially "included" for restore operation
-    const include = true
+    const includedFileIds = new Set(this.state.includedFileIds)
+    const include = includedFileIds.has(file.id)
 
     return (
       <StashedFileItem
@@ -121,7 +338,6 @@ export class StashedFilesList extends React.Component<
         file={file}
         include={include}
         onIncludeChanged={this.onIncludeChanged}
-        onClick={this.onFileClick}
         availableWidth={availableWidth}
         focused={this.state.focusedRow === row}
         inWorkingDirectory={inWorkingDirectory}
@@ -129,12 +345,27 @@ export class StashedFilesList extends React.Component<
     )
   }
 
-  private renderHeader = (fileCount: number, filteredFileCount: number, allFiles: ReadonlyArray<CommittedFileChange>): JSX.Element => {
+  private renderHeader = (
+    fileCount: number,
+    filteredFileCount: number,
+    allFiles: ReadonlyArray<CommittedFileChange>
+  ): JSX.Element => {
     const filesPlural = fileCount === 1 ? 'file' : 'files'
-    const hasFilters = this.state.filterText.length > 0 ||
-      this.state.filterNewFiles ||
-      this.state.filterModifiedFiles ||
-      this.state.filterDeletedFiles
+    const visibleFilesLabel =
+      filteredFileCount !== fileCount
+        ? `${filteredFileCount} of ${fileCount} stashed ${filesPlural}`
+        : `${fileCount} stashed ${filesPlural}`
+
+    const includedFileIds = new Set(this.state.includedFileIds)
+    const includedFileCount = allFiles.filter(f =>
+      includedFileIds.has(f.id)
+    ).length
+    const selectedChangesDescription = `${includedFileCount}/${fileCount} stashed ${filesPlural} included`
+
+    const totalCheckboxValue = this.getIncludeAllValue(
+      allFiles,
+      this.getFilteredFiles()
+    )
 
     const filterState = {
       filterText: this.state.filterText,
@@ -166,25 +397,118 @@ export class StashedFilesList extends React.Component<
         </div>
         <div className="checkbox-container">
           <Checkbox
-            value={CheckboxValue.On}
-            onChange={() => {}}
+            value={totalCheckboxValue}
+            onChange={this.onToggleAllFiles}
             disabled={false}
-            label={
-              hasFilters
-                ? `${filteredFileCount} of ${fileCount} stashed ${filesPlural}`
-                : `${fileCount} stashed ${filesPlural}`
-            }
+            label={visibleFilesLabel}
             ariaDescribedBy="stashed-files-list-header"
             className="changes-list-check-all"
           />
+        </div>
+        <div className="sr-only" id="stashed-files-list-header">
+          {selectedChangesDescription}
         </div>
       </div>
     )
   }
 
-  private getFilteredFiles = (): ReadonlyArray<CommittedFileChange> => {
+  private onToggleAllFiles = (event: React.FormEvent<HTMLInputElement>) => {
     const { stashEntry } = this.props
-    const { filterText, filterNewFiles, filterModifiedFiles, filterDeletedFiles } = this.state
+
+    if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
+      return
+    }
+
+    const includeAll = event.currentTarget.checked
+
+    const filteredFiles = this.getFilteredFiles()
+    const includedFileIds = new Set(this.state.includedFileIds)
+
+    for (const file of filteredFiles) {
+      if (includeAll) {
+        includedFileIds.add(file.id)
+      } else {
+        includedFileIds.delete(file.id)
+      }
+    }
+
+    this.setState({ includedFileIds: Array.from(includedFileIds) })
+    this.props.onIncludedFilesChanged?.(Array.from(includedFileIds))
+
+    for (const file of filteredFiles) {
+      this.props.onIncludeChanged(file, includeAll)
+    }
+  }
+
+  private getIncludeAllValue(
+    allFiles: ReadonlyArray<CommittedFileChange>,
+    filteredFiles: ReadonlyArray<CommittedFileChange>
+  ): CheckboxValue {
+    const includedFileIds = new Set(this.state.includedFileIds)
+    const files =
+      filteredFiles.length === allFiles.length ? allFiles : filteredFiles
+
+    if (files.length === 0) {
+      return CheckboxValue.Off
+    }
+
+    const includedCount = files.filter(f => includedFileIds.has(f.id)).length
+
+    if (includedCount === 0) {
+      return CheckboxValue.Off
+    }
+
+    if (includedCount === files.length) {
+      return CheckboxValue.On
+    }
+
+    return CheckboxValue.Mixed
+  }
+
+  private getSelectedRowsFromProps(
+    props: IStashedFilesListProps,
+    filterState: Pick<
+      IStashedFilesListState,
+      | 'filterText'
+      | 'filterNewFiles'
+      | 'filterModifiedFiles'
+      | 'filterDeletedFiles'
+    >
+  ): ReadonlyArray<number> {
+    if (props.stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
+      return []
+    }
+
+    const selectedRows: number[] = []
+    const filteredFiles = this.getFilteredFilesFromState(props, filterState)
+
+    for (const id of props.selectedFileIDs) {
+      const ix = filteredFiles.findIndex(file => file.id === id)
+      if (ix !== -1) {
+        selectedRows.push(ix)
+      }
+    }
+
+    return selectedRows
+  }
+
+  private getFilteredFilesFromState(
+    props: IStashedFilesListProps,
+    filterState: Pick<
+      IStashedFilesListState,
+      | 'filterText'
+      | 'filterNewFiles'
+      | 'filterModifiedFiles'
+      | 'filterDeletedFiles'
+    >
+  ): ReadonlyArray<CommittedFileChange> {
+    const { stashEntry } = props
+    const {
+      filterText,
+      filterNewFiles,
+      filterModifiedFiles,
+      filterDeletedFiles,
+    } = filterState
 
     if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
       return []
@@ -192,7 +516,6 @@ export class StashedFilesList extends React.Component<
 
     let files = stashEntry.files.files
 
-    // Apply text filter
     if (filterText) {
       const lowerFilter = filterText.toLowerCase()
       files = files.filter(file =>
@@ -200,19 +523,25 @@ export class StashedFilesList extends React.Component<
       )
     }
 
-    // Apply status filters
-    const hasStatusFilters = filterNewFiles || filterModifiedFiles || filterDeletedFiles
+    const hasStatusFilters =
+      filterNewFiles || filterModifiedFiles || filterDeletedFiles
     if (hasStatusFilters) {
       files = files.filter(file => {
         const status = file.status.kind
         if (filterNewFiles && status === AppFileStatusKind.New) return true
-        if (filterModifiedFiles && status === AppFileStatusKind.Modified) return true
-        if (filterDeletedFiles && status === AppFileStatusKind.Deleted) return true
+        if (filterModifiedFiles && status === AppFileStatusKind.Modified)
+          return true
+        if (filterDeletedFiles && status === AppFileStatusKind.Deleted)
+          return true
         return false
       })
     }
 
     return files
+  }
+
+  private getFilteredFiles = (): ReadonlyArray<CommittedFileChange> => {
+    return this.getFilteredFilesFromState(this.props, this.state)
   }
 
   public render() {
@@ -245,7 +574,11 @@ export class StashedFilesList extends React.Component<
 
     // TypeScript type guard - at this point we know files are loaded
     if (stashEntry.files.kind !== StashedChangesLoadStates.Loaded) {
-      return <div className="changes-list-container file-list filtered-changes-list">{this.renderHeader(totalFileCount, 0, allFiles)}</div>
+      return (
+        <div className="changes-list-container file-list filtered-changes-list">
+          {this.renderHeader(totalFileCount, 0, allFiles)}
+        </div>
+      )
     }
 
     const filteredFiles = this.getFilteredFiles()
@@ -260,8 +593,19 @@ export class StashedFilesList extends React.Component<
           rowRenderer={this.renderRow}
           selectedRows={this.state.selectedRows}
           onSelectionChanged={this.onFileSelectionChanged}
-          invalidationProps={stashEntry}
+          invalidationProps={{
+            stashEntry,
+            includedFileIds: this.state.includedFileIds,
+            focusedRow: this.state.focusedRow,
+            filterText: this.state.filterText,
+            filterNewFiles: this.state.filterNewFiles,
+            filterModifiedFiles: this.state.filterModifiedFiles,
+            filterDeletedFiles: this.state.filterDeletedFiles,
+          }}
           selectionMode="single"
+          onRowKeyboardFocus={this.onRowFocus}
+          onRowBlur={this.onRowBlur}
+          onRowContextMenu={this.onItemContextMenu}
         />
       </div>
     )

@@ -115,77 +115,89 @@ export class StashedFilesFilterOptions extends React.Component<
 
     return (
       <Popover
-        anchor={this.filterOptionsButtonRef}
-        anchorPosition={PopoverAnchorPosition.BottomLeft}
-        decoration={PopoverDecoration.Balloon}
-        onClickOutside={this.closeFilterOptions}
         className="filter-popover"
+        anchor={this.filterOptionsButtonRef}
+        anchorPosition={PopoverAnchorPosition.BottomRight}
+        decoration={PopoverDecoration.Balloon}
+        onMousedownOutside={this.closeFilterOptions}
+        onClickOutside={this.closeFilterOptions}
       >
-        <div className="popover-content">
-          <div className="filter-popover-header">
-            <h3>Filter by status</h3>
-            <button
-              className="close"
-              onClick={this.closeFilterOptions}
-              aria-label="Close"
-            >
-              <Octicon symbol={octicons.x} />
-            </button>
-          </div>
-
-          <div className="filter-options">
-            <Checkbox
-              label={`New (${counts.newFilesCount})`}
-              value={filterState.filterNewFiles ? CheckboxValue.On : CheckboxValue.Off}
-              onChange={this.onFilterNewFiles}
-            />
-            <Checkbox
-              label={`Modified (${counts.modifiedFilesCount})`}
-              value={filterState.filterModifiedFiles ? CheckboxValue.On : CheckboxValue.Off}
-              onChange={this.onFilterModifiedFiles}
-            />
-            <Checkbox
-              label={`Deleted (${counts.deletedFilesCount})`}
-              value={filterState.filterDeletedFiles ? CheckboxValue.On : CheckboxValue.Off}
-              onChange={this.onFilterDeletedFiles}
-            />
-          </div>
-
-          <div className="filter-options-footer">
-            <Button onClick={this.onClearAllFilters} disabled={!this.hasActiveFilters()}>
-              Clear filters
-            </Button>
-          </div>
+        <div className="filter-popover-header">
+          <h3 id="stashed-filter-options-header">Filter Options</h3>
+          <button
+            className="close"
+            onClick={this.closeFilterOptions}
+            aria-label="Close"
+          >
+            <Octicon symbol={octicons.x} />
+          </button>
         </div>
+
+        <div className="filter-options">
+          <Checkbox
+            label={`New (${counts.newFilesCount})`}
+            value={
+              filterState.filterNewFiles ? CheckboxValue.On : CheckboxValue.Off
+            }
+            onChange={this.onFilterNewFiles}
+          />
+          <Checkbox
+            label={`Modified (${counts.modifiedFilesCount})`}
+            value={
+              filterState.filterModifiedFiles
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onFilterModifiedFiles}
+          />
+          <Checkbox
+            label={`Deleted (${counts.deletedFilesCount})`}
+            value={
+              filterState.filterDeletedFiles
+                ? CheckboxValue.On
+                : CheckboxValue.Off
+            }
+            onChange={this.onFilterDeletedFiles}
+          />
+        </div>
+
+        {this.hasActiveFilters() && (
+          <div className="filter-options-footer">
+            <Button onClick={this.onClearAllFilters}>Clear filters</Button>
+          </div>
+        )}
       </Popover>
     )
   }
 
   public render() {
     const hasFilters = this.hasActiveFilters()
-
     const buttonClassName = classNames('filter-button', {
       active: hasFilters,
     })
+    const buttonTextLabel = `Filter Options ${hasFilters ? '(applied)' : ''}`
 
     return (
       <>
-        <button
-          ref={this.onFilterOptionsButtonRef}
+        <Button
           className={buttonClassName}
           onClick={this.toggleFilterOptions}
-          aria-label="Filter options"
+          onButtonRef={this.onFilterOptionsButtonRef}
+          ariaLabel={buttonTextLabel}
+          tooltip={buttonTextLabel}
         >
-          <span>Filter</span>
-          <Octicon symbol={octicons.chevronDown} />
-          {hasFilters && (
+          <span>
+            <Octicon symbol={octicons.filter} />
+          </span>
+          {hasFilters ? (
             <span className="active-badge">
-              <span className="badge-bg">
-                <span className="badge" />
-              </span>
+              <div className="badge-bg">
+                <div className="badge"></div>
+              </div>
             </span>
-          )}
-        </button>
+          ) : null}
+          <Octicon symbol={octicons.triangleDown} />
+        </Button>
         {this.renderFilterPopover()}
       </>
     )

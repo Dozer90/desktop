@@ -274,6 +274,72 @@ export async function createDesktopStashEntry(
   return true
 }
 
+/**
+ * Stash only the given paths.
+ *
+ * Returns the created stash entry or null if no stash was created.
+ */
+export async function createDesktopStashEntryForPaths(
+  repository: Repository,
+  branch: Branch | string,
+  stashName: string | null,
+  description: string | null,
+  discard: boolean,
+  paths: ReadonlyArray<string>,
+  includeUntracked: boolean
+): Promise<IStashEntry | null> {
+  if (paths.length === 0) {
+    return null
+  }
+
+  const branchName = typeof branch === 'string' ? branch : branch.name
+  const message = `On ${branchName}: ${createDesktopStashMessage(
+    branchName,
+    stashName,
+    description
+  )}`
+
+  const args = ['stash', 'push', '-m', message]
+  if (includeUntracked) {
+    args.push('-u')
+  }
+  args.push('--', ...paths)
+
+  const result = await git(
+    args,
+    repository.path,
+    'createStashEntryForPaths'
+  ).catch(e => {
+    if (e instanceof GitError && e.result.exitCode === 1) {
+      const errorPrefixRe = /^error: /m
+
+      const matches = errorPrefixRe.exec(coerceToString(e.result.stderr))
+      if (matches !== null && matches.length > 0) {
+        return Promise.reject(e)
+      }
+
+      log.info(
+        `[createDesktopStashEntryForPaths] a stash was created successfully but exit code ${e.result.exitCode} reported. stderr: ${e.result.stderr}`
+      )
+      return e.result
+    }
+    return Promise.reject(e)
+  })
+
+  if (result.stdout === 'No local changes to save\n') {
+    return null
+  }
+
+  const { allEntries } = await getStashes(repository)
+  const createdEntry = allEntries.length > 0 ? allEntries[0] : null
+
+  if (createdEntry !== null && discard === false) {
+    await applyStashEntry(repository, createdEntry.stashSha)
+  }
+
+  return createdEntry
+}
+
 async function getStashEntryMatchingSha(repository: Repository, sha: string) {
   const stash = await getStashes(repository)
   return stash.allEntries.find(e => e.stashSha === sha) || null
@@ -438,6 +504,8 @@ export async function getStashedFiles(
   const args = [
     'stash',
     'show',
+    '-M',
+    '-u',
     stashSha,
     '--raw',
     '--numstat',

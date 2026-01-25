@@ -13,7 +13,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: var(--spacing);
+    margin-bottom: var(--spacing-half);
 
     .checkbox-component {
       margin: 0;
@@ -37,11 +37,11 @@
     }
 
     .restore-button {
-      background-color: var(--dialog-primary-button-background-color);
-      color: var(--dialog-primary-button-text-color);
+      background-color: var(--button-background);
+      color: var(--button-text-color);
 
       &:hover {
-        background-color: var(--dialog-primary-button-hover-background-color);
+        background-color: var(--button-hover-background);
       }
 
       &:disabled {
@@ -51,7 +51,7 @@
     }
 
     .discard-button,
-    .delete-button {
+    .drop-button {
       background-color: var(--button-background-color);
       color: var(--button-text-color);
 
@@ -63,6 +63,10 @@
         background-color: var(--button-disabled-background-color);
         color: var(--button-disabled-text-color);
       }
+    }
+
+    .drop-button {
+      margin-top: var(--spacing);
     }
   }
 }

@@ -8,8 +8,10 @@ import * as octicons from '../octicons/octicons.generated'
 interface IStashedFileItemProps {
   readonly file: CommittedFileChange
   readonly include: boolean
-  readonly onIncludeChanged: (file: CommittedFileChange, include: boolean) => void
-  readonly onClick: (file: CommittedFileChange) => void
+  readonly onIncludeChanged: (
+    file: CommittedFileChange,
+    include: boolean
+  ) => void
   readonly availableWidth: number
   readonly focused: boolean
   readonly inWorkingDirectory: boolean
@@ -21,18 +23,9 @@ export class StashedFileItem extends React.Component<IStashedFileItemProps> {
     this.props.onIncludeChanged(this.props.file, include)
   }
 
-  private handleClick = () => {
-    this.props.onClick(this.props.file)
-  }
-
   public render() {
-    const {
-      file,
-      include,
-      availableWidth,
-      focused,
-      inWorkingDirectory,
-    } = this.props
+    const { file, include, availableWidth, focused, inWorkingDirectory } =
+      this.props
 
     const checkboxValue = include ? CheckboxValue.On : CheckboxValue.Off
     const status = file.status
@@ -43,8 +36,9 @@ export class StashedFileItem extends React.Component<IStashedFileItemProps> {
     const className = `file ${focused ? 'focused' : ''}`
 
     return (
-      <div className={className} onClick={this.handleClick}>
+      <div className={className}>
         <Checkbox
+          tabIndex={-1}
           value={checkboxValue}
           onChange={this.handleCheckboxChange}
           disabled={false}

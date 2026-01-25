@@ -94,12 +94,28 @@ export function updateChangedFiles(
         ? state.selection.diff
         : null
 
+    const stashedFile =
+      selectedFileIDs.length === 1 &&
+      state.selection.selectedFileIDs.length === 1 &&
+      state.selection.selectedFileIDs[0] === selectedFileIDs[0]
+        ? state.selection.stashedFile
+        : null
+
+    const stashedFileDiff =
+      selectedFileIDs.length === 1 &&
+      state.selection.selectedFileIDs.length === 1 &&
+      state.selection.selectedFileIDs[0] === selectedFileIDs[0]
+        ? state.selection.stashedFileDiff
+        : null
+
     return {
       workingDirectory,
       selection: {
         kind: ChangesSelectionKind.WorkingDirectory,
         selectedFileIDs,
         diff,
+        stashedFile,
+        stashedFileDiff,
       },
     }
   } else if (state.selection.kind === ChangesSelectionKind.Stash) {
@@ -348,6 +364,8 @@ export function selectWorkingDirectoryFiles(
       kind: ChangesSelectionKind.WorkingDirectory as ChangesSelectionKind.WorkingDirectory,
       selectedFileIDs,
       diff: null,
+      stashedFile: null,
+      stashedFileDiff: null,
     },
   }
 }

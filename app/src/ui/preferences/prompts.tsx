@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { UncommittedChangesStrategy } from '../../models/uncommitted-changes-strategy'
+import { EmptyStashBehavior } from '../../lib/app-state'
 import { DialogContent } from '../dialog'
 import { Checkbox, CheckboxValue } from '../lib/checkbox'
 import { RadioGroup } from '../lib/radio-group'
@@ -14,6 +15,7 @@ interface IPromptsPreferencesProps {
   readonly confirmCheckoutCommit: boolean
   readonly confirmForcePush: boolean
   readonly confirmUndoCommit: boolean
+  readonly emptyStashBehavior: EmptyStashBehavior
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly showCommitLengthWarning: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
@@ -28,6 +30,7 @@ interface IPromptsPreferencesProps {
   readonly onUncommittedChangesStrategyChanged: (
     value: UncommittedChangesStrategy
   ) => void
+  readonly onEmptyStashBehaviorChanged: (value: EmptyStashBehavior) => void
   readonly onAskForConfirmationOnCommitFilteredChanges: (value: boolean) => void
 }
 
@@ -41,6 +44,7 @@ interface IPromptsPreferencesState {
   readonly confirmUndoCommit: boolean
   readonly askForConfirmationOnCommitFilteredChanges: boolean
   readonly uncommittedChangesStrategy: UncommittedChangesStrategy
+  readonly emptyStashBehavior: EmptyStashBehavior
 }
 
 export class Prompts extends React.Component<
@@ -60,6 +64,7 @@ export class Prompts extends React.Component<
       confirmForcePush: this.props.confirmForcePush,
       confirmUndoCommit: this.props.confirmUndoCommit,
       uncommittedChangesStrategy: this.props.uncommittedChangesStrategy,
+      emptyStashBehavior: this.props.emptyStashBehavior,
       askForConfirmationOnCommitFilteredChanges:
         this.props.askForConfirmationOnCommitFilteredChanges,
     }
@@ -144,6 +149,11 @@ export class Prompts extends React.Component<
     this.props.onUncommittedChangesStrategyChanged(value)
   }
 
+  private onEmptyStashBehaviorChanged = (value: EmptyStashBehavior) => {
+    this.setState({ emptyStashBehavior: value })
+    this.props.onEmptyStashBehaviorChanged(value)
+  }
+
   private onShowCommitLengthWarningChanged = (
     event: React.FormEvent<HTMLInputElement>
   ) => {
@@ -153,7 +163,7 @@ export class Prompts extends React.Component<
   private renderSwitchBranchOptionLabel = (key: UncommittedChangesStrategy) => {
     switch (key) {
       case UncommittedChangesStrategy.AskForConfirmation:
-        return 'Ask me where I want the changes to go'
+        return 'Ask each time'
       case UncommittedChangesStrategy.MoveToNewBranch:
         return 'Always bring my changes to my new branch'
       case UncommittedChangesStrategy.StashOnCurrentBranch:
@@ -186,6 +196,47 @@ export class Prompts extends React.Component<
           radioButtonKeys={options}
           onSelectionChanged={this.onUncommittedChangesStrategyChanged}
           renderRadioButtonLabelContents={this.renderSwitchBranchOptionLabel}
+        />
+      </div>
+    )
+  }
+
+  private renderEmptyStashOptions = () => {
+    const options = [
+      EmptyStashBehavior.Drop,
+      EmptyStashBehavior.Keep,
+      EmptyStashBehavior.Ask,
+    ]
+
+    const selectedKey =
+      options.find(o => o === this.state.emptyStashBehavior) ??
+      EmptyStashBehavior.Ask
+
+    const renderLabel = (value: EmptyStashBehavior) => {
+      switch (value) {
+        case EmptyStashBehavior.Drop:
+          return 'Drop the empty stash'
+        case EmptyStashBehavior.Keep:
+          return 'Keep the empty stash'
+        case EmptyStashBehavior.Ask:
+          return 'Ask what I want to do'
+        default:
+          return assertNever(value, `Unknown empty stash behavior: ${value}`)
+      }
+    }
+
+    return (
+      <div className="advanced-section">
+        <h2 id="empty-stash-heading">
+          If I remove the last file from a stash...
+        </h2>
+
+        <RadioGroup<EmptyStashBehavior>
+          ariaLabelledBy="empty-stash-heading"
+          selectedKey={selectedKey}
+          radioButtonKeys={options}
+          onSelectionChanged={this.onEmptyStashBehaviorChanged}
+          renderRadioButtonLabelContents={renderLabel}
         />
       </div>
     )
@@ -284,6 +335,7 @@ export class Prompts extends React.Component<
           </div>
         </div>
         {this.renderSwitchBranchOptions()}
+        {this.renderEmptyStashOptions()}
         <div className="advanced-section">
           <h2>Commit Length</h2>
           <Checkbox
